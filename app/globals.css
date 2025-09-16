@@ -1,26 +1,43 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ===== Design Tokens ===== */
+:root{
+  --bg: #0b0f14;      /* 背景 */
+  --panel: #121821;   /* パネル */
+  --surface: #0e141c; /* サーフェス */
+  --line: #1f2a37;    /* 枠線 */
+  --ink: #eef2f7;     /* 本文 */
+  --muted: #98a2b3;   /* 補助 */
+  --brand: #60a5fa;   /* アクセント */
+  --accent: #22c55e;
+  --warn: #f59e0b;
+  --danger:#ef4444;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* Base */
+html, body { background: var(--bg); color: var(--ink); }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Utilities（v4は @layer 不要。通常のCSSでOK） */
+.container { @apply max-w-5xl mx-auto px-4; }
+.card      { @apply border rounded-2xl p-4 backdrop-blur; background: color-mix(in oklab, var(--panel), transparent 40%); border-color: var(--line); }
+.kpi       { @apply rounded-2xl p-4 border; background: color-mix(in oklab, var(--panel), transparent 40%); border-color: var(--line); }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+.btn         { @apply inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm transition; background: var(--panel); border-color: var(--line); }
+.btn:hover   { background: color-mix(in oklab, var(--panel), white 5%); }
+.btn:disabled{ @apply opacity-50 cursor-not-allowed; }
+
+.btn-primary { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm border transition; color: black; border-color: color-mix(in oklab, var(--brand), black 70%); background: var(--brand); }
+
+.input   { @apply rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2; background: var(--surface); border-color: var(--line); }
+.select  { @apply rounded-lg border px-3 py-2 text-sm; background: var(--surface); border-color: var(--line); }
+
+.muted        { color: var(--muted); }
+.bg-surface   { background: var(--surface); }
+.bg-panel     { background: var(--panel); }
+.bg-brand     { background: var(--brand); }
+.text-ink     { color: var(--ink); }
+.text-muted   { color: var(--muted); }
+.border-line  { border-color: var(--line); }
+
+.chart-wrap { @apply overflow-x-auto; }
+
