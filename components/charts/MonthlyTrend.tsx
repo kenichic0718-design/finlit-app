@@ -1,4 +1,5 @@
 "use client";
+
 import { useMemo } from "react";
 import {
   Chart as ChartJS,
@@ -7,56 +8,58 @@ import {
   LinearScale,
   CategoryScale,
   Tooltip,
-  Legend
+  Legend,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 
 ChartJS.register(LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend);
 
-type Point = { label: string; out: number; inc: number };
+export type TrendPoint = { label: string; out: number; inc: number };
 
-export default function MonthlyTrend({ points }: { points: Point[] }) {
-  const { labels, outs, incs } = useMemo(() => {
-    const labels = points.map((p) => p.label);
-    const outs = points.map((p) => Number(p.out || 0));
-    const incs = points.map((p) => Number(p.inc || 0));
-    return { labels, outs, incs };
-  }, [points]);
+export default function MonthlyTrend({ points }: { points: TrendPoint[] }) {
+  const labels = useMemo(() => points.map((p) => p.label), [points]);
+  const outs = useMemo(() => points.map((p) => Number(p.out || 0)), [points]);
+  const incs = useMemo(() => points.map((p) => Number(p.inc || 0)), [points]);
 
   if (!points.length) {
     return <div className="text-sm text-muted-foreground">データがありません。</div>;
   }
 
-  return (
-    <Line
-      data={{
-        labels,
-        datasets: [
-          {
-            label: "支出",
-            data: outs,
-            borderWidth: 2,
-            pointRadius: 0,
-            borderColor: "#f87171"
+  const data = {
+    labels,
+    datasets: [
+      { label: "支出", data: outs, tension: 0.3 },
+      { label: "収入", data: incs, tension: 0.3 },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false as const,
+    plugins: {
+      legend: { position: "top" as const },
+      tooltip: {
+        callbacks: {
+          label: (ctx: any) => {
+            const v = Number(ctx.raw ?? 0);
+            return `${ctx.dataset.label}: ${v.toLocaleString()}円`;
           },
-          {
-            label: "収入",
-            data: incs,
-            borderWidth: 2,
-            pointRadius: 0,
-            borderColor: "#34d399"
-          }
-        ]
-      }}
-      options={{
-        responsive: true,
-        plugins: { legend: { position: "top" } },
-        scales: {
-          y: { ticks: { callback: (v) => `${v}円` } }
         },
-        elements: { line: { tension: 0.25 } }
-      }}
-    />
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          callback: (v: any) => `${Number(v).toLocaleString()}円`,
+        },
+      },
+    },
+  };
+
+  return (
+    <div className="h-64 sm:h-80">
+      <Line data={data} options={options} />
+    </div>
   );
 }
-

@@ -1,110 +1,167 @@
-'use client';
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+"use client";
 
-type Budget = { id:number; month:string; category:string; amount:number };
-const CATS = ['食費','交通','通信','住居','学業','医療','趣味','交際','その他'];
+import React, { useEffect, useMemo, useState } from "react";
+import { getSupabaseClient } from "@/lib/supabaseClient";
+import { CANONICAL_CATEGORIES, normalizeCategory } from "../_constants/categories";
+import { getCurrentProfileId } from "../_utils/getCurrentProfileId";
 
-const ymNow = ()=> {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-};
-const prevYm = (ym:string)=>{
-  const [y,m] = ym.split('-').map(Number);
-  const d = new Date(y, m-2, 1); // 前月
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-};
-const fmt = (n:number)=>`${n.toLocaleString()}円`;
+type BudgetRow = { id: number; category: string; amount: number; yyyymm: string };
 
-export default function BudgetsPage(){
-  const [ym, setYm] = useState(ymNow());
-  const [category, setCategory] = useState(CATS[0]);
-  const [amount, setAmount] = useState<number>(0);
-  const [list, setList] = useState<Budget[]>([]);
-  const [busy, setBusy] = useState(false);
-  const total = useMemo(()=> list.reduce((s,b)=>s+b.amount,0),[list]);
+function toYyyymm(d: Date) {
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
-  const load = async () => {
-    const { data } = await supabase.from('budgets')
-      .select('id,month,category,amount')
-      .eq('month', ym).order('category',{ascending:true});
-    setList(data ?? []);
-  };
-  useEffect(()=>{ load(); },[ym]);
+export default function BudgetsPage() {
+  const supabase = getSupabaseClient();
+  const [profileId, setProfileId] = useState<string>("");
+  const [month, setMonth] = useState<string>(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const yyyymm = useMemo(() => month.replace("-", ""), [month]);
 
-  const save = async ()=>{
-    if (!amount || amount<0) return;
-    setBusy(true);
-    await supabase.from('budgets')
-      .upsert([{ month: ym, category, amount }], { onConflict: 'month,category' });
-    setAmount(0);
-    await load();
-    setBusy(false);
-  };
+  const [category, setCategory] = useState<string>(CANONICAL_CATEGORIES[0]);
+  const [amount, setAmount] = useState<string>("0");
+  const [rows, setRows] = useState<BudgetRow[]>([]);
 
-  const remove = async (id:number)=>{
-    setBusy(true);
-    await supabase.from('budgets').delete().eq('id', id);
-    setList(prev=>prev.filter(b=>b.id!==id));
-    setBusy(false);
-  };
+  useEffect(() => {
+    (async () => {
+      const pid = await getCurrentProfileId(supabase);
+      setProfileId(pid);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // 先月コピー（存在するものは上書き、無いものは作成）
-  const copyFromPrev = async ()=>{
-    setBusy(true);
-    const srcYm = prevYm(ym);
-    const { data: prev } = await supabase.from('budgets')
-      .select('category,amount').eq('month', srcYm);
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId, yyyymm]);
 
-    if (!prev || prev.length===0) { setBusy(false); return; }
+  async function refresh() {
+    if (!profileId) return;
+    const { data } = await supabase
+      .from("budgets")
+      .select("id, category, amount, yyyymm")
+      .eq("profile_id", profileId)
+      .eq("yyyymm", yyyymm)
+      .order("id", { ascending: true });
+    setRows((data as any) ?? []);
+  }
 
-    const rows = prev.map(p=>({ month: ym, category: p.category, amount: p.amount }));
-    await supabase.from('budgets').upsert(rows, { onConflict: 'month,category' });
-    await load();
-    setBusy(false);
-  };
+  async function addOrReplace() {
+    if (!profileId) {
+      alert("profileId が未確定です。少し待ってから再度お試しください。");
+      return;
+    }
+    const cat = normalizeCategory(category);
+
+    // 同カテゴリ・同月を削除してから追加（安全策）
+    await supabase
+      .from("budgets")
+      .delete()
+      .eq("profile_id", profileId)
+      .eq("yyyymm", yyyymm)
+      .eq("category", cat);
+
+    const { error } = await supabase.from("budgets").insert({
+      profile_id: profileId,
+      yyyymm,
+      category: cat,
+      amount: Number(amount || 0),
+    });
+
+    if (error) {
+      alert(`保存に失敗しました: ${error.message}`);
+      return;
+    }
+    setAmount("0");
+    await refresh();
+  }
+
+  async function remove(id: number) {
+    const { error } = await supabase.from("budgets").delete().eq("id", id);
+    if (error) {
+      alert(`削除に失敗しました: ${error.message}`);
+      return;
+    }
+    await refresh();
+  }
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-semibold">予算</h2>
+    <div className="mx-auto max-w-3xl p-6 space-y-6">
+      <h1 className="text-xl font-bold">予算</h1>
 
-      {/* フォーム */}
-      <div className="card space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input className="input w-36" value={ym} onChange={e=>setYm(e.target.value)} placeholder="YYYY-MM" />
-          <select className="select w-28" value={category} onChange={e=>setCategory(e.target.value)}>
-            {CATS.map(c=><option key={c}>{c}</option>)}
-          </select>
-          <input type="number" className="input w-28" min={0} placeholder="金額"
-                 value={Number.isFinite(amount)?amount:''}
-                 onChange={e=>setAmount(Number(e.target.value)||0)} />
-          <button className="btn" onClick={save} disabled={busy}>保存</button>
-          <button className="btn" onClick={copyFromPrev} disabled={busy}>先月からコピー</button>
-        </div>
-        <div className="text-sm text-muted">合計：<span className="font-semibold text-ink">{fmt(total)}</span></div>
+      <div className="flex items-center gap-3">
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="bg-transparent border px-3 py-2 rounded"
+        />
       </div>
 
-      {/* 一覧 */}
-      <div className="space-y-2">
-        {list.length===0 && (
-          <div className="text-sm text-muted">まだ予算がありません。カテゴリと金額を入力して「保存」してください。</div>
-        )}
-        <ul className="space-y-2">
-          {list.map(b=>(
-            <li key={b.id} className="card flex items-center justify-between">
-              <div className="text-sm">
-                <span className="font-medium">{b.month}</span> / {b.category} / {fmt(b.amount)}
-              </div>
-              <button className="btn text-danger border-danger/40" onClick={()=>remove(b.id)} disabled={busy}>削除</button>
-            </li>
+      <div className="flex flex-wrap gap-3 items-center">
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="bg-transparent border px-3 py-2 rounded"
+        >
+          {CANONICAL_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
           ))}
-        </ul>
+        </select>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="bg-transparent border px-3 py-2 rounded w-28"
+          placeholder="金額"
+        />
+        <button
+          onClick={addOrReplace}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+        >
+          追加 / 上書き保存
+        </button>
       </div>
 
-      <div className="text-xs text-muted">
-        ヒント：同じ月に同じカテゴリをもう一度保存すると上書きされます。先月コピーでスピード入力も可。
+      <div className="mt-4 border rounded">
+        <table className="w-full text-sm">
+          <thead className="opacity-70">
+            <tr>
+              <th className="text-left p-2">カテゴリ</th>
+              <th className="text-right p-2">金額</th>
+              <th className="text-right p-2">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-t">
+                <td className="p-2">{r.category}</td>
+                <td className="p-2 text-right">{r.amount.toLocaleString()}円</td>
+                <td className="p-2 text-right">
+                  <button
+                    onClick={() => remove(r.id)}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    削除
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td className="p-3 opacity-70" colSpan={3}>
+                  データがありません。
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
-

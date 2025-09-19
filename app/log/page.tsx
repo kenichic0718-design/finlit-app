@@ -1,116 +1,171 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabaseClient";
-import { monthLabels } from "@/lib/date";
-import {
-  Chart as ChartJS,
-  CategoryScale, LinearScale, BarElement, Tooltip, Legend
-} from "chart.js";
-import { Bar } from "react-chartjs-2";
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
-type Log = { id: number; date: string; category: string | null; amount: number; memo?: string | null; is_income?: boolean | null };
-type Category = { id: string; name: string; kind: "expense"|"income"; color: string };
+import React, { useEffect, useMemo, useState } from "react";
+import { getSupabaseClient } from "@/lib/supabaseClient";
+const supabase = getSupabaseClient();
+import { getCurrentProfileId } from "../_utils/getCurrentProfileId";
+
+type Row = {
+  id: number;
+  date: string | null;
+  ymd: string;
+  category: string;
+  amount: number;        // DBには常に正
+  memo: string | null;
+  is_income: boolean;
+};
+
+const CATEGORIES = ["食費", "日用品", "通信", "交通", "娯楽", "その他"];
+
+function toYmd(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${da}`;
+}
+function toYYYYMM(dateStr: string): string {
+  const d = new Date(dateStr);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}${m}`;
+}
 
 export default function LogPage() {
-  const supabase = createClient();
-  const [date, setDate] = useState<string>(new Date().toISOString().slice(0,10));
-  const [amount, setAmount] = useState<number>(0);
-  const [memo, setMemo] = useState<string>("");
-  const [isIncome, setIsIncome] = useState(false);
-  const [categoryName, setCategoryName] = useState<string>("食費");
+  const [profileId, setProfileId] = useState<string>("");
+  const [date, setDate] = useState<string>(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${da}`;
+  });
+  const [category, setCategory] = useState<string>("食費");
+  const [amount, setAmount] = useState<string>("0");
+  const [isIncome, setIsIncome] = useState<boolean>(false);
+  const [rows, setRows] = useState<Row[]>([]);
+  const currentYYYYMM = useMemo(() => toYYYYMM(date), [date]);
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const pid = await getCurrentProfileId();
+      setProfileId(pid);
+    })();
+  }, []);
 
-  async function fetchCategories() {
-    const { data } = await supabase.from("categories").select("*").order("created_at",{ascending:true});
-    setCategories((data||[]) as Category[]);
-  }
-  async function fetchLogs() {
-    const y = new Date(date).getFullYear();
-    const m = new Date(date).getMonth()+1;
-    const ym = `${y}-${String(m).padStart(2,'0')}`;
-    const { data } = await supabase.from("logs")
-      .select("*").like("date", `${ym}%`).order("date",{ascending:true});
-    setLogs((data||[]) as Log[]);
-  }
+  const fetchThisMonth = async () => {
+    if (!profileId) return;
+    const start = `${currentYYYYMM.slice(0, 4)}-${currentYYYYMM.slice(4, 6)}-01`;
+    const endBase = new Date(start);
+    endBase.setMonth(endBase.getMonth() + 1);
+    const end = `${endBase.getFullYear()}-${String(endBase.getMonth() + 1).padStart(2, "0")}-01`;
 
-  useEffect(()=>{ fetchCategories(); },[]);
-  useEffect(()=>{ fetchLogs(); },[date]);
+    const { data, error } = await supabase
+      .from("logs")
+      .select("*")
+      .eq("profile_id", profileId)
+      .gte("ymd", start)
+      .lt("ymd", end)
+      .order("ymd", { ascending: false });
 
-  async function add() {
-    setLoading(true);
-    const payload = { date, category: categoryName, amount, memo, is_income: isIncome };
-    const { error } = await supabase.from("logs").insert(payload);
-    setLoading(false);
-    if (error) return alert("保存に失敗しました（詳細はコンソール）");
-    setAmount(0); setMemo("");
-    fetchLogs();
-  }
-
-  const monthBar = useMemo(()=>{
-    const labels = ["食費","交通","日用品","交際","エンタメ","医療","教育","住居","光熱","通信","その他"];
-    const by = new Map(labels.map(l=>[l,0]));
-    for (const it of logs) {
-      if (it.is_income) continue;
-      const key = it.category || "その他";
-      by.set(key, (by.get(key)||0) + Number(it.amount||0));
+    if (error) {
+      alert(`取得に失敗しました: ${error.message}`);
+      console.error(error);
+      return;
     }
-    const catMap = new Map(categories.filter(c=>c.kind==='expense').map(c=>[c.name,c.color]));
-    const usedLabels = [...by.keys()];
-    const data = usedLabels.map(l=>by.get(l)||0);
-    const bg = usedLabels.map(l=>catMap.get(l)||"#64748b");
-    return { labels: usedLabels, data, bg };
-  },[logs,categories]);
+    setRows((data as Row[]) ?? []);
+  };
 
-  const lineLabels = monthLabels(new Date(date));
+  useEffect(() => {
+    fetchThisMonth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId, currentYYYYMM]);
+
+  const onAdd = async () => {
+    if (!profileId) return;
+    const ymd = toYmd(date);
+    const yyyymm = toYYYYMM(date);
+    const amt = Math.abs(Number(amount) || 0);  // 常に正で保存
+
+    const payload = {
+      profile_id: profileId,
+      date: ymd,
+      ymd,
+      yyyymm,
+      category,
+      amount: amt,
+      memo: null,
+      is_income: isIncome,
+    };
+
+    const { error } = await supabase.from("logs").insert(payload);
+    if (error) {
+      alert(`保存に失敗しました: ${error.message}`);
+      console.error(error);
+      return;
+    }
+    setAmount("0");
+    await fetchThisMonth();
+  };
+
   return (
-    <main className="max-w-5xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold">記録</h1>
+    <main className="max-w-3xl mx-auto p-6 space-y-6">
+      <h1 className="text-2xl font-bold">収支記録</h1>
 
       <div className="flex flex-wrap items-center gap-3">
-        <input type="date" value={date} onChange={(e)=>setDate(e.target.value)}
-               className="px-3 py-2 rounded bg-gray-800 border border-gray-600"/>
-        <select value={categoryName} onChange={(e)=>setCategoryName(e.target.value)}
-                className="px-3 py-2 rounded bg-gray-800 border border-gray-600">
-          {categories.map(c=>(
-            <option key={c.id} value={c.name}>{c.name} {c.kind==='income'?'(収入)':''}</option>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="bg-transparent border rounded px-3 py-2"
+        />
+
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="bg-transparent border rounded px-3 py-2"
+        >
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
           ))}
         </select>
-        <input type="number" value={amount} onChange={(e)=>setAmount(Number(e.target.value||0))}
-               className="w-24 px-3 py-2 rounded bg-gray-800 border border-gray-600"/>
-        <input placeholder="メモ（任意）" value={memo} onChange={(e)=>setMemo(e.target.value)}
-               className="flex-1 px-3 py-2 rounded bg-gray-800 border border-gray-600"/>
-        <label className="inline-flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={isIncome} onChange={(e)=>setIsIncome(e.target.checked)} />
-          収入
+
+        <input
+          type="number"
+          inputMode="numeric"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="bg-transparent border rounded px-3 py-2 w-28 text-right"
+        />
+
+        <label className="inline-flex items-center gap-2 ml-2">
+          <input
+            type="checkbox"
+            checked={isIncome}
+            onChange={(e) => setIsIncome(e.target.checked)}
+          />
+          収入として記録する
         </label>
-        <button onClick={add} disabled={loading}
-                className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50">追加</button>
+
+        <button
+          onClick={onAdd}
+          className="bg-green-600 hover:bg-green-700 text-white rounded px-4 py-2"
+        >
+          追加
+        </button>
       </div>
 
-      <section className="p-4 rounded border border-gray-700">
-        <h2 className="font-semibold mb-2">カテゴリ別（今月の支出）</h2>
-        <Bar
-          data={{ labels: monthBar.labels,
-                  datasets: [{ label: "支出", data: monthBar.data, backgroundColor: monthBar.bg }] }}
-          options={{ plugins:{legend:{display:false}}, scales:{ y:{ ticks:{ callback:(v)=>`${v}円` } } } }}
-        />
-      </section>
-
-      <section className="space-y-2">
-        {logs.map(l=>(
-          <div key={l.id} className="px-3 py-2 rounded border border-gray-700 flex justify-between">
-            <div>{l.date} <span className="text-gray-300">{l.category}</span> {l.memo?`- ${l.memo}`:''}</div>
-            <div className={l.is_income ? "text-emerald-400":"text-gray-100"}>
-              {l.is_income?"+":""}{Number(l.amount).toLocaleString()}円
-            </div>
-          </div>
+      <ul className="space-y-2 text-sm">
+        {rows.map((r) => (
+          <li key={r.id}>
+            {r.ymd} [{r.is_income ? "収入" : "支出"}] {r.category}：{Math.abs(r.amount)}円
+          </li>
         ))}
-        {!logs.length && <div className="text-sm text-gray-400">今月の記録はまだありません。</div>}
-      </section>
+      </ul>
     </main>
   );
 }
+

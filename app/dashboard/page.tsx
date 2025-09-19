@@ -1,97 +1,103 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { createClient } from "@/lib/supabaseClient";
-import { monthLabels, monthRange } from "@/lib/date";
-import CategoryPie from "@/components/charts/CategoryPie";
-import MonthlyTrend from "@/components/charts/MonthlyTrend";
 
-type Log = { id: number; date: string; category: string | null; amount: number; is_income?: boolean | null };
-type Category = { id: string; name: string; kind: "expense"|"income"; color: string };
+import React, { useEffect, useMemo, useState } from "react";
+import { getCurrentProfileId } from "../_utils/getCurrentProfileId";
+import { fetchBudgetVsActual, summarize, type BudgetActualRow } from "../_utils/budgetActual";
+
+function toYYYYMM(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}${m}`;
+}
 
 export default function DashboardPage() {
-  const supabase = createClient();
-  const [dateStr, setDateStr] = useState<string>(() => {
-    const d = new Date();
-    return `${d.getFullYear()}年${String(d.getMonth()+1).padStart(2,"0")}月`;
-  });
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [profileId, setProfileId] = useState<string>("");
+  const [yyyymm, setYYYYMM] = useState<string>(() => toYYYYMM(new Date()));
+  const [rows, setRows] = useState<BudgetActualRow[]>([]);
+  const summary = useMemo(() => summarize(rows), [rows]);
 
-  async function fetchAll() {
-    // categories
-    const { data: cats } = await supabase.from("categories").select("*");
-    setCategories((cats||[]) as Category[]);
+  useEffect(() => {
+    (async () => {
+      const pid = await getCurrentProfileId();
+      setProfileId(pid);
+    })();
+  }, []);
 
-    // month logs
-    const now = new Date();
-    const { start, end } = monthRange(now);
-    const { data } = await supabase.from("logs")
-      .select("*")
-      .gte("date", start.toISOString().slice(0,10))
-      .lte("date", end.toISOString().slice(0,10))
-      .order("date",{ascending:true});
-    setLogs((data||[]) as Log[]);
-  }
-  useEffect(()=>{ fetchAll(); },[]);
+  useEffect(() => {
+    (async () => {
+      if (!profileId) return;
+      const data = await fetchBudgetVsActual(yyyymm, profileId);
+      setRows(data);
+    })();
+  }, [profileId, yyyymm]);
 
-  const totalOut = useMemo(()=> logs.filter(l=>!l.is_income).reduce((s,l)=>s+Number(l.amount||0),0),[logs]);
-  const totalInc = useMemo(()=> logs.filter(l=> l.is_income).reduce((s,l)=>s+Number(l.amount||0),0),[logs]);
-  const net = totalInc - totalOut;
-
-  const labels = monthLabels(new Date());
-  const trend = useMemo(()=>{
-    const byDay = new Map(labels.map(l=>[l,{out:0,inc:0}]));
-    for (const l of logs) {
-      const d = new Date(l.date);
-      const key = `${d.getDate()}日`;
-      const cur = byDay.get(key)!;
-      if (l.is_income) cur.inc += Number(l.amount||0);
-      else cur.out += Number(l.amount||0);
-    }
-    return labels.map(l=>({ label:l, out: byDay.get(l)!.out, inc: byDay.get(l)!.inc }));
-  },[logs,labels]);
+  const ymDisp = `${yyyymm.slice(0,4)}年${yyyymm.slice(4,6)}月`;
 
   return (
-    <main className="max-w-6xl mx-auto p-6 space-y-6">
-      <header className="flex gap-3">
-        <Link href="/dashboard" className="px-3 py-1 rounded bg-blue-700 text-white">ダッシュボード</Link>
-        <Link href="/learn" className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white">学ぶ</Link>
-        <Link href="/log" className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white">記録</Link>
-        <Link href="/goal" className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white">目標</Link>
-        <Link href="/budgets" className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white">予算</Link>
-        <Link href="/categories" className="ml-auto px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white">カテゴリ管理</Link>
-      </header>
+    <main className="max-w-4xl mx-auto p-6 space-y-6">
+      <h1 className="text-2xl font-bold">ダッシュボード</h1>
 
-      <h1 className="text-2xl font-bold">FinLit PWA</h1>
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">月を選択:</span>
+        <input
+          type="month"
+          value={`${yyyymm.slice(0,4)}-${yyyymm.slice(4,6)}`}
+          onChange={(e) => setYYYYMM(e.target.value.replace("-", ""))}
+          className="bg-transparent border rounded px-3 py-2"
+        />
+        <span className="text-sm text-muted-foreground">{ymDisp}</span>
+      </div>
 
-      <section className="grid md:grid-cols-3 gap-4">
-        <div className="p-4 rounded border border-gray-700">
-          <div className="text-sm text-gray-400">今月の支出</div>
-          <div className="text-3xl font-bold">{totalOut.toLocaleString()}円</div>
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="border rounded p-4">
+          <div className="text-xs text-muted-foreground">当月予算合計</div>
+          <div className="text-xl font-semibold">{summary.budget.toLocaleString()} 円</div>
         </div>
-        <div className="p-4 rounded border border-gray-700">
-          <div className="text-sm text-gray-400">今月の収入</div>
-          <div className="text-3xl font-bold">{totalInc.toLocaleString()}円</div>
+        <div className="border rounded p-4">
+          <div className="text-xs text-muted-foreground">当月支出合計</div>
+          <div className="text-xl font-semibold">{summary.spent.toLocaleString()} 円</div>
         </div>
-        <div className="p-4 rounded border border-gray-700">
-          <div className="text-sm text-gray-400">収支</div>
-          <div className={`text-3xl font-bold ${net<0?'text-rose-400':'text-emerald-400'}`}>
-            {net.toLocaleString()}円
-          </div>
+        <div className="border rounded p-4">
+          <div className="text-xs text-muted-foreground">当月収入合計</div>
+          <div className="text-xl font-semibold">{summary.income.toLocaleString()} 円</div>
+        </div>
+        <div className="border rounded p-4">
+          <div className="text-xs text-muted-foreground">進捗（支出/予算）</div>
+          <div className="text-xl font-semibold">{summary.progress}%</div>
         </div>
       </section>
 
-      <section className="grid md:grid-cols-2 gap-6">
-        <div className="p-4 rounded border border-gray-700">
-          <h2 className="font-semibold mb-2">カテゴリ別（支出の割合）</h2>
-          <CategoryPie items={logs} categories={categories}/>
-        </div>
-        <div className="p-4 rounded border border-gray-700">
-          <h2 className="font-semibold mb-2">予算 vs 実績（今月）</h2>
-          <MonthlyTrend points={trend}/>
+      <section>
+        <h2 className="text-lg font-semibold mb-2">カテゴリ別 予算 vs 実績（支出）</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-2 pr-4">カテゴリ</th>
+                <th className="text-right py-2 pr-4">予算</th>
+                <th className="text-right py-2 pr-4">実績(支出)</th>
+                <th className="text-right py-2 pr-4">収入</th>
+                <th className="text-right py-2">差額(予算-支出)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const diff = (r.budget ?? 0) - (r.actual ?? 0);
+                return (
+                  <tr key={r.category} className="border-b">
+                    <td className="py-2 pr-4">{r.category}</td>
+                    <td className="py-2 pr-4 text-right">{(r.budget ?? 0).toLocaleString()}</td>
+                    <td className="py-2 pr-4 text-right">{(r.actual ?? 0).toLocaleString()}</td>
+                    <td className="py-2 pr-4 text-right">{(r.income ?? 0).toLocaleString()}</td>
+                    <td className="py-2 text-right">{diff.toLocaleString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </section>
     </main>
   );
 }
+

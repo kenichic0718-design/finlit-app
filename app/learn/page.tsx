@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from "@/lib/supabaseClient";
+const supabase = getSupabaseClient();
 
 type Q = {
   id: number; topic: string; question: string;

@@ -1,7 +1,8 @@
-'use client';
+"use client";
+import { getSupabaseClient } from "@/lib/supabaseClient";
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabaseClient';
+import { getSupabaseClient } from "@/lib/supabaseClient";
 import { monthRange, yyyymm } from '@/lib/date';
 import Link from 'next/link';
 
@@ -15,7 +16,7 @@ type LogRow = {
 };
 
 export default function DashboardPage() {
-  const supabase = createClient();
+  const supabase = getSupabaseClient();
 
   const [ym, setYm] = useState<string>(yyyymm(new Date()));
   const [spendSum, setSpendSum] = useState<number>(0);

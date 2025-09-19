@@ -1,12 +1,13 @@
 "use client";
+import { getSupabaseClient } from "@/lib/supabaseClient";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabaseClient";
+import { getSupabaseClient } from "@/lib/supabaseClient";
 
 type Category = { id: string; name: string; kind: "expense" | "income"; color: string };
 
 export default function CategoriesPage() {
-  const supabase = createClient();
+  const supabase = getSupabaseClient();
   const [list, setList] = useState<Category[]>([]);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"expense"|"income">("expense");
