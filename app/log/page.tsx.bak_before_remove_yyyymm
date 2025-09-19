@@ -91,7 +91,9 @@ export default function LogPage() {
     const payload = {
       profile_id: profileId,
       date: ymd,
-      ymd,      category,
+      ymd,
+      yyyymm,
+      category,
       amount: Math.abs(Number(amt)),
       memo: null,
       is_income: isIncome,
