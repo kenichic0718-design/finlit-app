@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/ssr": "^0.7.0",
     "chart.js": "^4.5.0",
     "dayjs": "^1.11.18",
     "next": "15.5.3",
