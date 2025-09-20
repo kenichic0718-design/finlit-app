@@ -1,28 +1,42 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { toYyyymm } from '../_utils/budgetActual'; // 既存のutilに合わせてください（無ければ下のyyyymmFromMonthで代用）
 import { getCurrentProfileId } from '../_utils/getCurrentProfileId';
 
+// ★ プロジェクトの Supabase クライアントの呼び出し方は app/log/page.tsx と同じにしてください！
+// 例1: （あなたのプロジェクトの実装に合わせて）
+import { useSupabase } from '@/supabaseClient';
+// 例2: （もし上が無ければ）
+// import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+
 type BudgetRow = { id: number; category: string; amount: number; yyyymm: string };
+
 const CATEGORIES = ['食費', '交通', '日用品', '通信', '娯楽', '米', 'その他'];
 
-// "2025-09" -> "202509"
+// フォールバック: "2025-09" -> "202509"
 function yyyymmFromMonth(month: string) {
   return month.replace('-', '');
 }
 
 export default function BudgetsPage() {
-  const supabase = createClientComponentClient();
+  // Supabase クライアントを log/page.tsx と同じ方法で用意
+  const supabase = useSupabase?.() as any;
+  // const supabase = createClientComponentClient(); // ←もし useSupabase が無い場合はこちらに切替
 
-  // 月UI
+  // UI 状態
   const [month, setMonth] = useState<string>(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
-  const yyyymm = useMemo(() => yyyymmFromMonth(month), [month]);
+  const yyyymm = useMemo(() => {
+    try {
+      return toYyyymm ? toYyyymm(month) : yyyymmFromMonth(month);
+    } catch {
+      return yyyymmFromMonth(month);
+    }
+  }, [month]);
 
-  // 一覧
   const [rows, setRows] = useState<BudgetRow[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -33,20 +47,24 @@ export default function BudgetsPage() {
   // 一覧取得
   useEffect(() => {
     (async () => {
+      if (!supabase) return;
       const profileId = await getCurrentProfileId(supabase);
       if (!profileId) return;
+
       const { data, error } = await supabase
         .from('budgets')
         .select('id, category, amount, yyyymm')
         .eq('profile_id', profileId)
         .eq('yyyymm', yyyymm)
         .order('category', { ascending: true });
+
       if (!error && data) setRows(data as BudgetRow[]);
     })();
   }, [supabase, yyyymm]);
 
   // 追加
   async function handleAdd() {
+    if (!supabase) return;
     if (amount === '' || Number.isNaN(Number(amount))) {
       alert('金額を入力してください');
       return;
@@ -59,13 +77,14 @@ export default function BudgetsPage() {
       const payload = {
         profile_id: profileId,
         category,
-        amount: Math.abs(Number(amount)), // 予算は常に正
+        amount: Math.abs(Number(amount)), // 常に正の値で保存（実績は別テーブル）
         yyyymm,
       };
+
       const { error } = await supabase.from('budgets').insert(payload);
       if (error) throw error;
 
-      // 再取得
+      // 再読込
       const { data, error: e2 } = await supabase
         .from('budgets')
         .select('id, category, amount, yyyymm')

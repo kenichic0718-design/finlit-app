@@ -45,3 +45,7 @@ next-env.d.ts
 *.zip
 scripts/*.pl
 fix-*.sh
+# Playwright
+playwright-report/
+test-results/
+.env.test.local
