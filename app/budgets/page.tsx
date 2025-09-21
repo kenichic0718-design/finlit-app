@@ -1,166 +1,189 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { getCurrentProfileId } from '../_utils/getCurrentProfileId';
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { getCurrentProfileId } from "../_utils/getCurrentProfileId";
 
+type Category = { id: string; name: string; kind: "expense" | "income"; color: string };
 type BudgetRow = { id: number; category: string; amount: number; yyyymm: string };
-const CATEGORIES = ['食費', '交通', '日用品', '通信', '娯楽', '米', 'その他'];
-
-// "2025-09" -> "202509"
-function yyyymmFromMonth(month: string) {
-  return month.replace('-', '');
-}
 
 export default function BudgetsPage() {
-  const supabase = createClientComponentClient();
-
-  // 月UI
-  const [month, setMonth] = useState<string>(() => {
+  const [yyyymm, setYyyymm] = useState<string>(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    return `${y}${m}`;
   });
-  const yyyymm = useMemo(() => yyyymmFromMonth(month), [month]);
 
-  // 一覧
-  const [rows, setRows] = useState<BudgetRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [budgets, setBudgets] = useState<BudgetRow[]>([]);
+  const [catInput, setCatInput] = useState<string>("");
+  const [amountInput, setAmountInput] = useState<number>(4000);
+  const [loading, setLoading] = useState<boolean>(false);
 
-  // フォーム
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [amount, setAmount] = useState<number | ''>('');
+  const ymLabel = useMemo(() => {
+    return `${yyyymm.slice(0, 4)}年${yyyymm.slice(4, 6)}月`;
+  }, [yyyymm]);
 
-  // 一覧取得
   useEffect(() => {
     (async () => {
-      const profileId = await getCurrentProfileId(supabase);
-      if (!profileId) return;
-      const { data, error } = await supabase
-        .from('budgets')
-        .select('id, category, amount, yyyymm')
-        .eq('profile_id', profileId)
-        .eq('yyyymm', yyyymm)
-        .order('category', { ascending: true });
-      if (!error && data) setRows(data as BudgetRow[]);
-    })();
-  }, [supabase, yyyymm]);
+      setLoading(true);
+      try {
+        // カテゴリの読み込み
+        const { data: cats, error: cErr } = await supabase
+          .from("categories")
+          .select("id,name,kind,color")
+          .order("name", { ascending: true });
 
-  // 追加
-  async function handleAdd() {
-    if (amount === '' || Number.isNaN(Number(amount))) {
-      alert('金額を入力してください');
+        if (cErr) throw cErr;
+        setCategories(cats ?? []);
+
+        // 予算の読み込み
+        const profileId = await getCurrentProfileId();
+        const { data: b, error: bErr } = await supabase
+          .from("budgets")
+          .select("id,category,amount,yyyymm")
+          .eq("profile_id", profileId)
+          .eq("yyyymm", yyyymm)
+          .order("category", { ascending: true });
+
+        if (bErr) throw bErr;
+        setBudgets(b ?? []);
+      } catch (e: any) {
+        alert(`予算データ取得失敗: ${e?.message ?? e}`);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [yyyymm]);
+
+  const addBudget = async () => {
+    if (!catInput) {
+      alert("カテゴリを選択してください");
+      return;
+    }
+    if (!amountInput || amountInput <= 0) {
+      alert("金額を入力してください");
       return;
     }
     setLoading(true);
     try {
-      const profileId = await getCurrentProfileId(supabase);
-      if (!profileId) throw new Error('profile_id が取得できませんでした');
-
-      const payload = {
+      const profileId = await getCurrentProfileId();
+      const { error } = await supabase.from("budgets").insert({
         profile_id: profileId,
-        category,
-        amount: Math.abs(Number(amount)), // 予算は常に正
+        category: catInput,
+        amount: amountInput,
         yyyymm,
-      };
-      const { error } = await supabase.from('budgets').insert(payload);
+      });
       if (error) throw error;
 
-      // 再取得
-      const { data, error: e2 } = await supabase
-        .from('budgets')
-        .select('id, category, amount, yyyymm')
-        .eq('profile_id', profileId)
-        .eq('yyyymm', yyyymm)
-        .order('category', { ascending: true });
-      if (e2) throw e2;
-      setRows((data ?? []) as BudgetRow[]);
-      setAmount('');
+      // 追加後に再読込
+      const { data: b2, error: rErr } = await supabase
+        .from("budgets")
+        .select("id,category,amount,yyyymm")
+        .eq("profile_id", profileId)
+        .eq("yyyymm", yyyymm)
+        .order("category", { ascending: true });
+
+      if (rErr) throw rErr;
+      setBudgets(b2 ?? []);
+      setAmountInput(0);
     } catch (e: any) {
       alert(`保存に失敗しました: ${e?.message ?? e}`);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">予算</h1>
+    <main className="mx-auto max-w-3xl px-4 py-8 text-slate-200">
+      <h1 className="mb-6 text-2xl font-bold">予算</h1>
 
-      {/* 月選択 */}
-      <div className="flex items-center gap-3">
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="border rounded px-3 py-2 bg-black/20 border-white/20"
-        />
-        <span className="text-sm opacity-70">対象: {yyyymm}</span>
-      </div>
-
-      {/* 追加フォーム */}
-      <div className="flex items-end gap-3">
-        <div className="flex flex-col">
-          <label className="text-sm mb-1">カテゴリ</label>
+      <section className="mb-6 space-y-2">
+        <label className="block text-sm opacity-80">対象: {ymLabel}</label>
+        <div className="flex items-center gap-3">
           <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="border rounded px-3 py-2 bg-black/20 border-white/20 min-w-[140px]"
+            className="rounded bg-slate-800 px-3 py-2"
+            value={`${yyyymm.slice(0, 4)}-${yyyymm.slice(4, 6)}`}
+            onChange={(e) => {
+              const [y, m] = e.target.value.split("-");
+              setYyyymm(`${y}${m}`);
+            }}
           >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            {Array.from({ length: 36 }).map((_, i) => {
+              const d = new Date();
+              d.setMonth(d.getMonth() - i);
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, "0");
+              const val = `${y}-${m}`;
+              return (
+                <option key={val} value={val}>
+                  {y}年{m}月
+                </option>
+              );
+            })}
           </select>
         </div>
+      </section>
 
-        <div className="flex flex-col">
-          <label className="text-sm mb-1">金額（円）</label>
+      <section className="mb-8">
+        <div className="mb-3 text-lg font-semibold">追加</div>
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            className="rounded bg-slate-800 px-3 py-2"
+            value={catInput}
+            onChange={(e) => setCatInput(e.target.value)}
+          >
+            <option value="">カテゴリを選択</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
           <input
             type="number"
-            inputMode="numeric"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
-            className="border rounded px-3 py-2 bg-black/20 border-white/20"
-            placeholder="例) 15000"
+            className="w-32 rounded bg-slate-800 px-3 py-2"
+            value={amountInput}
+            onChange={(e) => setAmountInput(Number(e.target.value))}
+            placeholder="金額"
           />
+          <button
+            onClick={addBudget}
+            disabled={loading}
+            className="rounded bg-emerald-600 px-4 py-2 font-semibold hover:bg-emerald-500 disabled:opacity-50"
+          >
+            追加
+          </button>
         </div>
+      </section>
 
-        <button
-          onClick={handleAdd}
-          disabled={loading}
-          className="px-4 py-2 rounded-lg bg-brand text-black border border-brand/40 hover:opacity-90 disabled:opacity-50"
-        >
-          追加
-        </button>
-      </div>
-
-      {/* 一覧 */}
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th className="px-4 py-2 text-left">カテゴリ</th>
-            <th className="px-4 py-2 text-right">予算</th>
-            <th className="px-4 py-2 text-right">yyyyMM</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td className="px-4 py-4" colSpan={3}>
-                この月のデータがありません。まずは予算を追加してみてください。
-              </td>
-            </tr>
-          ) : (
-            rows.map((r) => (
-              <tr key={r.id} className="border-t border-white/10">
-                <td className="px-4 py-2">{r.category}</td>
-                <td className="px-4 py-2 text-right">{r.amount.toLocaleString()}円</td>
-                <td className="px-4 py-2 text-right">{r.yyyymm}</td>
+      <section>
+        <div className="mb-3 text-lg font-semibold">この月のデータ</div>
+        {loading ? (
+          <div className="opacity-80">読み込み中…</div>
+        ) : budgets.length === 0 ? (
+          <div className="opacity-80">この月のデータがありません。まずは予算を追加してみてください。</div>
+        ) : (
+          <table className="w-full table-fixed border-separate border-spacing-y-2">
+            <thead className="text-left opacity-80">
+              <tr>
+                <th className="w-1/2">カテゴリ</th>
+                <th className="w-1/2">予算</th>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+            </thead>
+            <tbody>
+              {budgets.map((b) => (
+                <tr key={b.id} className="rounded bg-slate-800">
+                  <td className="px-3 py-2">{b.category}</td>
+                  <td className="px-3 py-2">{b.amount.toLocaleString()} 円</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </main>
   );
 }
 
