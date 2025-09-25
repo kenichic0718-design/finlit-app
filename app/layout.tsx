@@ -1,7 +1,9 @@
+// app/layout.tsx
 export const dynamic = 'force-static';
 import type { Metadata } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
+import AuthBootstrap from "@/components/AuthBootstrap";
 
 export const metadata: Metadata = {
   title: "FinLit PWA",
@@ -18,6 +20,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Nav />
           </div>
         </header>
+
+        {/* ← 匿名セッションの初期化（画面には何も出さない） */}
+        <AuthBootstrap />
 
         <main className="container py-6">
           {children}
