@@ -1,41 +1,18 @@
 // lib/supabaseClient.ts
-"use client";
+'use client';
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseBrowser } from '@/app/_supabase/client';
 
-// 必要なら Database 型を定義できます（省略でも動きます）
-type Database = any;
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-// グローバルにキャッシュして複数インスタンスを防止
-declare global {
-  // eslint-disable-next-line no-var
-  var __FINLIT_SUPABASE__: SupabaseClient<Database> | undefined;
+/** 互換API：旧名の getSupabaseClient を新実装に委譲 */
+export function getSupabaseClient(): SupabaseClient {
+  return getSupabaseBrowser();
 }
 
-const globalForSupabase = globalThis as unknown as {
-  __FINLIT_SUPABASE__?: SupabaseClient<Database>;
-};
-
-export const supabase: SupabaseClient<Database> =
-  globalForSupabase.__FINLIT_SUPABASE__ ??
-  createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      storageKey: "finlit-auth",
-      detectSessionInUrl: true,
-    },
-  });
-
-globalForSupabase.__FINLIT_SUPABASE__ = supabase;
-
-// 互換用（必要なら）
-export function getSupabaseClient() {
-  return supabase;
-}
-
-export default supabase;
-
+/** 互換API：旧来の `supabase` 直接参照があっても1個体だけ返す */
+let _singleton: SupabaseClient | null = null;
+export const supabase: SupabaseClient = (() => {
+  if (_singleton) return _singleton;
+  _singleton = getSupabaseBrowser();
+  return _singleton;
+})();

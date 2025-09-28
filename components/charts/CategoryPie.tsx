@@ -1,68 +1,56 @@
 "use client";
 
-import { useMemo } from "react";
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
-import { Pie } from "react-chartjs-2";
+import React, { useEffect, useMemo, useState } from "react";
+import { getSupabaseBrowser } from "@/app/_supabase/client";
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+type Row = { category: string; total: number };
 
-export type LogItem = {
-  id: number;
-  date: string;        // YYYY-MM-DD
-  category: string | null;
-  amount: number | null;
-  is_income?: boolean | null;
-};
+export default function CategoryPie() {
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [msg, setMsg] = useState<string | null>(null);
 
-export default function CategoryPie({ items }: { items: LogItem[] }) {
-  // 支出だけをカテゴリ合計
-  const { labels, values } = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const it of items) {
-      if (it.is_income) continue; // 収入は除外
-      const amt = Number(it.amount || 0);
-      if (!amt) continue;
-      const key = it.category || "未分類";
-      map.set(key, (map.get(key) ?? 0) + amt);
-    }
-    const labels = Array.from(map.keys());
-    const values = labels.map((k) => map.get(k) ?? 0);
-    return { labels, values };
-  }, [items]);
+  // vid 準備
+  useEffect(() => {
+    fetch("/api/profile").catch(() => {});
+  }, []);
 
-  if (!labels.length) {
-    return <div className="text-sm text-muted-foreground">データがありません。</div>;
-  }
+  useEffect(() => {
+    let aborted = false;
+    (async () => {
+      // 例：支出合計をカテゴリ別に集計するビュー/クエリがある前提
+      const { data, error } = await supabase
+        .rpc("category_expense_totals") // ない場合はあなたの実装に合わせてください
+        .select();
 
-  const data = {
-    labels,
-    datasets: [
-      {
-        label: "支出",
-        data: values,
-      },
-    ],
-  };
+      if (!aborted) {
+        if (error) {
+          setMsg(`集計に失敗：${error.message}`);
+          setRows([]);
+        } else {
+          setMsg(null);
+          setRows((data ?? []) as Row[]);
+        }
+      }
+    })();
+    return () => {
+      aborted = true;
+    };
+  }, [supabase]);
 
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false as const,
-    plugins: {
-      legend: { position: "top" as const },
-      tooltip: {
-        callbacks: {
-          label: (ctx: any) => {
-            const v = Number(ctx.raw ?? 0);
-            return `${ctx.label}: ${v.toLocaleString()}円`;
-          },
-        },
-      },
-    },
-  };
+  if (msg) return <p className="text-sm text-muted">{msg}</p>;
+  if (rows.length === 0) return <p className="text-sm text-muted">データがありません。</p>;
 
+  // 実際の円グラフはお好みのライブラリで。ここでは簡易表示に留めます
   return (
-    <div className="h-64 sm:h-80">
-      <Pie data={data} options={options} />
-    </div>
+    <ul className="text-sm space-y-1">
+      {rows.map((r) => (
+        <li key={r.category} className="flex justify-between">
+          <span>{r.category}</span>
+          <span>{r.total.toLocaleString()} 円</span>
+        </li>
+      ))}
+    </ul>
   );
 }
+

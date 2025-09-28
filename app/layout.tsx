@@ -1,33 +1,35 @@
-export const dynamic = 'force-static';
+// app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
-import Nav from "@/components/Nav";
+import Header from "@/components/Header";
+import AuthUrlHandler from "@/components/AuthUrlHandler";
+// ↓ トーストを全体で使っている場合だけ有効化（無ければこの import と <ToastHost /> を削除）
+import ToastHost from "@/components/ToastHost";
 
 export const metadata: Metadata = {
   title: "FinLit PWA",
-  description: "学ぶ→記録→目標。金融リテラシーと家計管理を一つに。",
+  description: "学んで、記録して、未来を設計しよう。",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="ja">
-      <body className="min-h-dvh bg-surface text-ink">
-        <header className="border-b border-line bg-panel/60 backdrop-blur">
-          <div className="container py-3 flex items-center justify-between gap-4">
-            <div className="text-xl font-bold tracking-tight">FinLit PWA</div>
-            <Nav />
-          </div>
-        </header>
+      <body className="bg-zinc-950 text-zinc-100 min-h-screen">
+        {/* どこに着地しても ?code=... を検知してセッション確立 → /settings へ誘導 */}
+        <AuthUrlHandler />
 
-        <main className="container py-6">
-          {children}
-        </main>
+        {/* 共通ヘッダー（ナビ＋ログイン導線） */}
+        <Header />
 
-        <footer className="border-t border-line mt-10">
-          <div className="container py-4 text-xs text-muted">
-            © {new Date().getFullYear()} FinLit. 学んで、記録して、未来を設計しよう。
-          </div>
-        </footer>
+        {/* ページ本体 */}
+        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+
+        {/* グローバルトースト（使っていれば残す） */}
+        <ToastHost />
       </body>
     </html>
   );

@@ -1,165 +1,39 @@
-'use client';
+// app/budgets/page.tsx
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { getCurrentProfileId } from '../_utils/getCurrentProfileId';
+import React from "react";
+import BudgetForm from "@/components/BudgetForm";
+import BudgetList from "@/components/BudgetList";
 
-type BudgetRow = { id: number; category: string; amount: number; yyyymm: string };
-const CATEGORIES = ['食費', '交通', '日用品', '通信', '娯楽', '米', 'その他'];
-
-// "2025-09" -> "202509"
-function yyyymmFromMonth(month: string) {
-  return month.replace('-', '');
+function thisMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export default function BudgetsPage() {
-  const supabase = createClientComponentClient();
-
-  // 月UI
-  const [month, setMonth] = useState<string>(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const yyyymm = useMemo(() => yyyymmFromMonth(month), [month]);
-
-  // 一覧
-  const [rows, setRows] = useState<BudgetRow[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  // フォーム
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [amount, setAmount] = useState<number | ''>('');
-
-  // 一覧取得
-  useEffect(() => {
-    (async () => {
-      const profileId = await getCurrentProfileId(supabase);
-      if (!profileId) return;
-      const { data, error } = await supabase
-        .from('budgets')
-        .select('id, category, amount, yyyymm')
-        .eq('profile_id', profileId)
-        .eq('yyyymm', yyyymm)
-        .order('category', { ascending: true });
-      if (!error && data) setRows(data as BudgetRow[]);
-    })();
-  }, [supabase, yyyymm]);
-
-  // 追加
-  async function handleAdd() {
-    if (amount === '' || Number.isNaN(Number(amount))) {
-      alert('金額を入力してください');
-      return;
-    }
-    setLoading(true);
-    try {
-      const profileId = await getCurrentProfileId(supabase);
-      if (!profileId) throw new Error('profile_id が取得できませんでした');
-
-      const payload = {
-        profile_id: profileId,
-        category,
-        amount: Math.abs(Number(amount)), // 予算は常に正
-        yyyymm,
-      };
-      const { error } = await supabase.from('budgets').insert(payload);
-      if (error) throw error;
-
-      // 再取得
-      const { data, error: e2 } = await supabase
-        .from('budgets')
-        .select('id, category, amount, yyyymm')
-        .eq('profile_id', profileId)
-        .eq('yyyymm', yyyymm)
-        .order('category', { ascending: true });
-      if (e2) throw e2;
-      setRows((data ?? []) as BudgetRow[]);
-      setAmount('');
-    } catch (e: any) {
-      alert(`保存に失敗しました: ${e?.message ?? e}`);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [month, setMonth] = React.useState(thisMonth());
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">予算</h1>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-semibold">予算</h1>
 
-      {/* 月選択 */}
-      <div className="flex items-center gap-3">
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="border rounded px-3 py-2 bg-black/20 border-white/20"
-        />
-        <span className="text-sm opacity-70">対象: {yyyymm}</span>
+      <div className="rounded border border-zinc-700/60 p-4">
+        <h2 className="text-lg font-semibold mb-4">月次予算を追加</h2>
+        <BudgetForm />
       </div>
 
-      {/* 追加フォーム */}
-      <div className="flex items-end gap-3">
-        <div className="flex flex-col">
-          <label className="text-sm mb-1">カテゴリ</label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="border rounded px-3 py-2 bg-black/20 border-white/20 min-w-[140px]"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col">
-          <label className="text-sm mb-1">金額（円）</label>
+      <div className="rounded border border-zinc-700/60 p-4">
+        <div className="flex items-center justify-between mb-3 gap-3">
+          <h2 className="text-lg font-semibold">今月の予算</h2>
           <input
-            type="number"
-            inputMode="numeric"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
-            className="border rounded px-3 py-2 bg-black/20 border-white/20"
-            placeholder="例) 15000"
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700"
           />
         </div>
-
-        <button
-          onClick={handleAdd}
-          disabled={loading}
-          className="px-4 py-2 rounded-lg bg-brand text-black border border-brand/40 hover:opacity-90 disabled:opacity-50"
-        >
-          追加
-        </button>
+        <BudgetList month={month} />
       </div>
-
-      {/* 一覧 */}
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th className="px-4 py-2 text-left">カテゴリ</th>
-            <th className="px-4 py-2 text-right">予算</th>
-            <th className="px-4 py-2 text-right">yyyyMM</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td className="px-4 py-4" colSpan={3}>
-                この月のデータがありません。まずは予算を追加してみてください。
-              </td>
-            </tr>
-          ) : (
-            rows.map((r) => (
-              <tr key={r.id} className="border-t border-white/10">
-                <td className="px-4 py-2">{r.category}</td>
-                <td className="px-4 py-2 text-right">{r.amount.toLocaleString()}円</td>
-                <td className="px-4 py-2 text-right">{r.yyyymm}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
     </div>
   );
 }
