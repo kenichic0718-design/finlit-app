@@ -1,8 +1,9 @@
-'\''use client'\'';
-export const dynamic = '\''force-dynamic'\'';
+'use client';
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export const dynamic = orce-dynamic';
+'\''use client'\'';
+
 
 
 // app/goal/page.tsx
