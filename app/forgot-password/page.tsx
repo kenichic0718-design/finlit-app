@@ -1,5 +1,8 @@
-// app/forgot-password/page.tsx
 'use client';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+// app/forgot-password/page.tsx
 
 import { useState } from 'react';
 import { getSupabaseBrowser } from '@/app/_supabase/client';
