@@ -2,8 +2,6 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-'\''use client'\'';
-
 // app/budgets/page.tsx
 
 import React from "react";

@@ -15,20 +15,17 @@ const WANT = [
   "export const revalidate = 0;",
 ];
 
-const useClientRe = /(^|\n)\s*(['"`])use client\2\s*;?\s*($|\n)/g;
-
 let bad = [];
 for (const f of FILES) {
   if (!fs.existsSync(f)) continue;
   const txt = fs.readFileSync(f, "utf8").replace(/\uFEFF/g, "").replace(/\u007F/g, "");
   const lines = txt.split(/\r?\n/);
   const head = lines.slice(0, 3);
-
-  const headerOk = head[0] === WANT[0] && head[1] === WANT[1] && head[2] === WANT[2];
   const rest = lines.slice(3).join("\n");
 
-  // 先頭以外に 'use client' が出てこないこと
-  const hasUseClientInBody = useClientRe.test("\n" + rest + "\n");
+  const headerOk = head[0] === WANT[0] && head[1] === WANT[1] && head[2] === WANT[2];
+  // 先頭以外に「use client」を含む行がないこと（引用の形が崩れていても検出）
+  const hasUseClientInBody = /use client/.test(rest);
 
   if (!headerOk || hasUseClientInBody) bad.push(f);
 }

@@ -2,8 +2,6 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-'\''use client'\'';
-
 // app/learn/page.tsx
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";

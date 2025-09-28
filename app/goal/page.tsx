@@ -2,8 +2,6 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-'\''use client'\'';
-
 // app/goal/page.tsx
 
 import { useMemo, useState } from 'react';

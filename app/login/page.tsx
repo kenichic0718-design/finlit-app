@@ -1,5 +1,8 @@
+'use client';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // app/login/page.tsx（置換：GitHubボタンは削除）
-"use client";
 import * as React from "react";
 import { getSupabaseClient } from "@/app/_supabase/client";
 import { toast } from "@/components/ToastHost";
