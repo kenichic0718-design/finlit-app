@@ -1,22 +1,29 @@
-// app/_supabase/client.ts（置換）
-"use client";
-import { createBrowserClient } from "@supabase/ssr";
-import type { SupabaseClient } from "@supabase/supabase-js";
+// app/_supabase/client.ts
+'use client';
 
-let _client: SupabaseClient | null = null;
-export function getSupabaseClient() {
-  if (_client) return _client;
-  _client = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        persistSession: true,   // 同端末で継続
-        autoRefreshToken: true, // 自動更新
-        detectSessionInUrl: true,
-      },
-    }
-  );
-  return _client;
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js';
+
+let browserClient: SupabaseClient | null = null;
+
+/** ブラウザ用 Supabase クライアント（永続セッション・自動更新ON） */
+export function getSupabaseClient(): SupabaseClient {
+  if (browserClient) return browserClient;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  if (!url || !anon) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
+
+  browserClient = createSupabaseClient(url, anon, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+
+  return browserClient!;
 }
+
+/** 互換エイリアス（既存コードが import { getSupabaseBrowser } … を使っても動く） */
+export const getSupabaseBrowser = getSupabaseClient;
 

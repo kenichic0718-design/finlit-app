@@ -1,24 +1,57 @@
 // app/_supabase/server.ts
-import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const url     = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anon    = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!; // 存在チェック用
-const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+/** Edge/Node どちらでも動くサーバー用クライアント */
+export function createClient(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  if (!url || !anon) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
-export function envReady() {
-  return Boolean(url && anon && service);
-}
+  const store = cookies();
 
-let _admin: SupabaseClient | null = null;
-
-/** サービスロールの管理クライアント（サーバー専用 / RLSバイパス） */
-export function getSupabaseAdmin(): SupabaseClient {
-  if (!envReady()) throw new Error('Supabase environment variables are not ready.');
-  if (_admin) return _admin;
-
-  _admin = createServiceClient(url, service, {
-    auth: { persistSession: false },
-    global: { headers: { 'X-Client-Info': 'finlit-admin' } },
+  return createServerClient(url, anon, {
+    cookies: {
+      get(name) {
+        return store.get(name)?.value;
+      },
+      set(name, value, options) {
+        // Vercel Edge/Node で動く書き方
+        try {
+          store.set({ name, value, ...options });
+        } catch {
+          // no-op（ビルド時など cookies が書けない環境向け）
+        }
+      },
+      remove(name, options) {
+        try {
+          store.set({ name, value: '', ...options, maxAge: 0 });
+        } catch {}
+      },
+    },
   });
-  return _admin;
 }
+
+/** 管理者操作が必要なとき用（RLSを回避して profiles を作るなど） */
+export function getSupabaseAdmin(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  if (!url || !service) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
+
+  return createSupabaseClient(url, service);
+}
+
+/** プロフィール行が無ければ upsert するユーティリティ（APIから呼び出し想定） */
+export async function ensureProfile(userId: string) {
+  const admin = getSupabaseAdmin();
+  await admin.from('profiles').upsert({ id: userId }, { onConflict: 'id' });
+}
+
+/** env チェック用の簡易関数（エラーメッセージ短縮） */
+export function envReady() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new Error('Supabase env not ready');
+  }
+}
+
