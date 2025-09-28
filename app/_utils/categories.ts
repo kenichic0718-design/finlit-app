@@ -1,49 +1,60 @@
 // app/_utils/categories.ts
-import 'server-only';
-import { createClient } from "@/app/_supabase/server";
-
 export type Kind = "expense" | "income";
+export type Category = {
+  id: string;
+  name: string;
+  kind: Kind;
+  color?: string | null;
+  profile_id?: string | null;
+  order_index?: number | null;
+};
 
-export async function fetchCategoriesForPick(profileId: string, kind: Kind) {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("categories")
-    .select("id,name,kind")
-    .eq("kind", kind)
-    .order("name", { ascending: true });
+type ListResp = { ok: true; items: Category[] } | { ok: false; error: string };
+type CreateResp = { ok: true; item: Category } | { ok: false; error: string };
 
-  if (error) throw error;
-  return data!.filter(c => c.name && c.name.trim().length > 0);
+export async function listCategories(kind: Kind | "all", init?: RequestInit): Promise<ListResp> {
+  const res = await fetch(`/api/categories?kind=${kind}`, {
+    cache: "no-store",
+    ...(init ?? {}),
+  });
+  return res.json();
 }
 
-/** name が無ければ追加して id を返す。既存があればその id。 */
-export async function ensureCategory(profileId: string, kind: Kind, name: string) {
-  const supabase = createClient();
+export async function createCategory(payload: { name: string; kind: Kind }): Promise<CreateResp> {
+  const res = await fetch(`/api/categories`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
 
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("カテゴリ名を入力してください。");
+export async function renameCategory(id: string, name: string) {
+  const res = await fetch(`/api/categories/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ name }),
+  });
+  return res.json();
+}
 
-  // 既存検索
-  const { data: existed, error: selErr } = await supabase
-    .from("categories")
-    .select("id")
-    .eq("kind", kind)
-    .ilike("name", trimmed)
-    .limit(1);
-  if (selErr) throw selErr;
+export async function deleteCategory(id: string) {
+  const res = await fetch(`/api/categories/${id}`, {
+    method: "DELETE",
+    cache: "no-store",
+  });
+  return res.json();
+}
 
-  if (existed && existed.length > 0) {
-    return existed[0].id as string;
-  }
-
-  // 新規作成
-  const { data: inserted, error: insErr } = await supabase
-    .from("categories")
-    .insert({ name: trimmed, kind })
-    .select("id")
-    .limit(1);
-  if (insErr) throw insErr;
-
-  return inserted![0].id as string;
+export async function sortCategories(updates: Array<{ id: string; order_index: number }>) {
+  const res = await fetch(`/api/categories/sort`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ updates }),
+  });
+  return res.json();
 }
 

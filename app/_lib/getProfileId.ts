@@ -1,45 +1,23 @@
-'use server';
-
-import { createClient } from '@/app/_supabase/server';
+// app/_lib/getProfileId.ts
+"use server";
 
 /**
- * 現在ログイン中ユーザーの profile_id を返す。
- * なければ作成してから返す。
- *
- * 返り値:
- *   - string: profile_id
- *   - null  : 未ログイン
+ * 現在ログイン中ユーザーの profile を初期化＆取得して id を返す。
+ * 未ログインなら null を返す。
+ * 実装は内部 API /api/profile に委譲する。
  */
 export async function getProfileId(): Promise<string | null> {
-  const supabase = await createClient();
-
-  // 1) ログイン確認
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  // 2) 既存の profiles を探す
-  const { data: existing, error: selErr } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (selErr) {
-    console.error(selErr);
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/api/profile`, {
+      // 相対でも OK だが、ビルド環境によっては絶対 URL が安定
+      cache: "no-store",
+      // 読み出しだけ（/api/profile 側で必要なら作成も行う）
+    });
+    const json = await res.json().catch(() => ({} as any));
+    if (json?.ok && json?.id) return json.id as string;
+    return null;
+  } catch {
+    return null;
   }
-  if (existing?.id) return existing.id;
-
-  // 3) なければ作成（RLSで許可が必要）
-  const { data: inserted, error: insErr } = await supabase
-    .from('profiles')
-    .insert({ user_id: user.id })          // 必要に応じて初期値を追加
-    .select('id')
-    .single();
-
-  if (insErr) {
-    console.error(insErr);
-    throw insErr; // ここで失敗する場合は RLS の許可が不足
-  }
-  return inserted.id;
 }
 

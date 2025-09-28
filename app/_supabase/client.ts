@@ -1,19 +1,22 @@
-// app/_supabase/client.ts
-'use client';
-
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+// app/_supabase/client.ts（置換）
+"use client";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 let _client: SupabaseClient | null = null;
-
-/** CSR(ブラウザ)から使う読み取り主体のクライアント */
-export function getSupabaseBrowser(): SupabaseClient {
+export function getSupabaseClient() {
   if (_client) return _client;
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  _client = createClient(url, anon, {
-    auth: { persistSession: true },
-  });
+  _client = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: true,   // 同端末で継続
+        autoRefreshToken: true, // 自動更新
+        detectSessionInUrl: true,
+      },
+    }
+  );
   return _client;
 }
 

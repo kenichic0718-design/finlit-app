@@ -10,6 +10,7 @@ type Category = {
   kind: Kind;
   color?: string | null;
   profile_id?: string | null;
+  order_index?: number | null;
 };
 
 type CategoriesResp =
@@ -21,6 +22,17 @@ type CreateCategoryResp =
   | { ok: false; error: string };
 
 const CREATE_VALUE = "__create__";
+
+// 安全に JSON を読む小ヘルパー（HTML が返ってきた場合にも堅牢）
+async function safeJson<T>(res: Response): Promise<T> {
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    // HTML などを返した場合は text として読んでエラー化
+    const text = await res.text();
+    throw new Error(text || "Server returned non-JSON response");
+  }
+  return (await res.json()) as T;
+}
 
 export default function LogForm() {
   const [kind, setKind] = useState<Kind>("expense");
@@ -41,25 +53,26 @@ export default function LogForm() {
       setLoadingCats(true);
       setCatsError(null);
       try {
-        const res = await fetch(`/api/categories?kind=${kind}`, {
-          cache: "no-store",
-        });
-        const data: CategoriesResp = await res.json();
+        const res = await fetch(`/api/categories?kind=${kind}`, { cache: "no-store" });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || "カテゴリ取得に失敗しました");
+        }
+        const data = await safeJson<CategoriesResp>(res);
         if (aborted) return;
-        if (!data.ok) {
-          setCatsError(data.error ?? "カテゴリ取得に失敗しました");
+        if (!("ok" in data) || data.ok !== true) {
+          setCatsError((data as any)?.error ?? "カテゴリ取得に失敗しました");
           setCategories([]);
           setCategoryId("");
           return;
         }
         setCategories(data.items);
-        // 既存の選択が別種別になったらリセット
-        const stillExists =
-          data.items.find((c) => c.id === categoryId) !== undefined;
+        // 既存選択の整合性
+        const stillExists = data.items.some((c) => c.id === categoryId);
         if (!stillExists) setCategoryId("");
-      } catch (e) {
+      } catch (e: any) {
         if (!aborted) {
-          setCatsError("カテゴリ取得に失敗しました");
+          setCatsError(e?.message || "カテゴリ取得に失敗しました");
           setCategories([]);
           setCategoryId("");
         }
@@ -74,9 +87,13 @@ export default function LogForm() {
   }, [kind]);
 
   const selectOptions = useMemo(() => {
-    const base = categories
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const base = categories.slice().sort((a, b) => {
+      // order_index がある場合はそれを優先
+      const ao = a.order_index ?? 0;
+      const bo = b.order_index ?? 0;
+      if (ao !== bo) return ao - bo;
+      return a.name.localeCompare(b.name);
+    });
     return base;
   }, [categories]);
 
@@ -88,50 +105,50 @@ export default function LogForm() {
     }
     // 新規作成フロー
     const name = window.prompt("新しいカテゴリ名を入力してください（例：食費）");
-    if (!name) {
-      // キャンセル or 空文字
-      // 直前の選択に戻す
-      setCategoryId("");
+    if (name == null) {
+      // キャンセル
       return;
     }
-
     const trimmed = name.trim();
     if (!trimmed) {
       alert("カテゴリ名が空です。");
-      setCategoryId("");
       return;
     }
 
     try {
-      // API: POST /api/categories へ作成依頼
       const res = await fetch("/api/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmed, kind }),
       });
-      const data: CreateCategoryResp = await res.json();
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "カテゴリの作成に失敗しました。");
+      }
+      const data = await safeJson<CreateCategoryResp>(res);
       if (!data.ok) {
-        alert(data.error ?? "カテゴリの作成に失敗しました。");
-        setCategoryId("");
-        return;
+        throw new Error(data.error ?? "カテゴリの作成に失敗しました。");
       }
 
-      // 成功: 一旦ローカルに反映（再取得でもOK）
+      // 成功: 一旦ローカル反映
       const created = data.item;
-      setCategories((prev) => {
-        // 重複防止
-        const exists = prev.some((c) => c.id === created.id);
-        const next = exists ? prev : [...prev, created];
-        return next;
-      });
+      setCategories((prev) => (prev.some((c) => c.id === created.id) ? prev : [...prev, created]));
       setCategoryId(created.id);
-    } catch (e) {
-      alert("カテゴリの作成に失敗しました。");
-      setCategoryId("");
+
+      // 念のためサーバー最新版を再取得（並び順などが変わる可能性に備える）
+      try {
+        const ref = await fetch(`/api/categories?kind=${kind}`, { cache: "no-store" });
+        if (ref.ok) {
+          const refJson = await safeJson<CategoriesResp>(ref);
+          if (refJson.ok) setCategories(refJson.items);
+        }
+      } catch {}
+    } catch (e: any) {
+      alert(e?.message || "カテゴリの作成に失敗しました。");
     }
   };
 
-  // 3) 記録の送信（既存のAPIに合わせてください）
+  // 3) 記録の送信（/api/logs に合わせています）
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitOk(false);
@@ -149,28 +166,23 @@ export default function LogForm() {
 
     setSubmitLoading(true);
     try {
-      // ここはあなたの既存エンドポイントに合わせてください。
-      // 例1: /api/logs/add を使っていた場合
-      // const res = await fetch("/api/logs/add", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({ amount: value, kind, category_id: categoryId }),
-      // });
-
-      // 例2: /api/logs を使う場合（お好みで）
       const res = await fetch("/api/logs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: value, kind, category_id: categoryId }),
       });
 
-      const data = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || data.ok === false) {
-        throw new Error(data?.error ?? "記録に失敗しました。");
+      const okJson = await safeJson<{ ok?: boolean; error?: string }>(res).catch(async () => {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "記録に失敗しました。");
+      });
+
+      if (!res.ok || okJson.ok === false) {
+        throw new Error(okJson?.error ?? "記録に失敗しました。");
       }
       setSubmitOk(true);
       setAmount("");
-      // 選択はそのままにしておく（連続入力向け）
+      // 選択カテゴリは維持（連続入力を想定）
     } catch (err: any) {
       setSubmitError(err?.message ?? "記録に失敗しました。");
     } finally {
@@ -184,7 +196,7 @@ export default function LogForm() {
 
       {/* 種別切替 */}
       <div className="mb-6 flex gap-6">
-        <label className="inline-flex items-center gap-2 cursor-pointer">
+        <label className="inline-flex cursor-pointer items-center gap-2">
           <input
             type="radio"
             name="kind"
@@ -194,7 +206,7 @@ export default function LogForm() {
           />
           <span>支出</span>
         </label>
-        <label className="inline-flex items-center gap-2 cursor-pointer">
+        <label className="inline-flex cursor-pointer items-center gap-2">
           <input
             type="radio"
             name="kind"
@@ -236,11 +248,7 @@ export default function LogForm() {
             ))}
             <option value={CREATE_VALUE}>＋ 新しいカテゴリを作成</option>
           </select>
-          {catsError && (
-            <p className="text-sm text-red-400">
-              {catsError}
-            </p>
-          )}
+          {catsError && <p className="text-sm text-red-400">{catsError}</p>}
         </div>
 
         {/* 送信 */}
@@ -256,15 +264,10 @@ export default function LogForm() {
 
         {/* フィードバック */}
         <div className="md:col-span-3">
-          {submitError && (
-            <p className="mt-1 text-sm text-red-400">{submitError}</p>
-          )}
-          {submitOk && (
-            <p className="mt-1 text-sm text-emerald-400">記録しました！</p>
-          )}
+          {submitError && <p className="mt-1 text-sm text-red-400">{submitError}</p>}
+          {submitOk && <p className="mt-1 text-sm text-emerald-400">記録しました！</p>}
         </div>
       </form>
     </div>
   );
 }
-

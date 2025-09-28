@@ -1,72 +1,39 @@
 // app/budgets/page.tsx
-import { createClient } from "@/app/_supabase/server";
-import BudgetForm from "./_BudgetForm";
-import { revalidatePath } from "next/cache";
+"use client";
 
-export const revalidate = 0;           // ← 常に最新
-export const dynamic = "force-dynamic"; // ← 動的レンダリングを強制（保険）
+import React from "react";
+import BudgetForm from "@/components/BudgetForm";
+import BudgetList from "@/components/BudgetList";
 
-async function getProfileId(): Promise<string> {
-  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-  const res = await fetch(`${base}/api/profile`, { cache: "no-store" });
-  if (!res.ok) throw new Error("プロフィール取得に失敗しました");
-  const json = (await res.json()) as { vid: string };
-  return json.vid;
+function thisMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-type Category = { id: string; name: string; kind: "expense" | "income" };
-
-async function fetchCategories(profileId: string): Promise<Category[]> {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("categories")
-    .select("id,name,kind")
-    .eq("profile_id", profileId)
-    .order("kind", { ascending: true })
-    .order("name", { ascending: true });
-
-  if (error) throw error;
-  return (data ?? []) as Category[];
-}
-
-// 予算の登録（例）
-export async function createBudget(formData: FormData) {
-  "use server";
-  const supabase = createClient();
-
-  const profileId = String(formData.get("profileId") ?? "");
-  const categoryId = String(formData.get("categoryId") ?? "");
-  const amount = Number(formData.get("amount") ?? 0);
-  const yyyymm = String(formData.get("yyyymm") ?? "");
-
-  if (!profileId || !categoryId || !amount) {
-    throw new Error("必須項目が不足しています");
-  }
-
-  const { error } = await supabase.from("budgets").insert({
-    profile_id: profileId,
-    category_id: categoryId,
-    amount,
-    yyyymm: yyyymm || null,
-  });
-  if (error) throw error;
-
-  revalidatePath("/budgets");
-  revalidatePath("/log");
-}
-
-export default async function Page() {
-  const profileId = await getProfileId();
-  const categories = await fetchCategories(profileId);
+export default function BudgetsPage() {
+  const [month, setMonth] = React.useState(thisMonth());
 
   return (
-    <div className="mx-auto max-w-3xl p-6 space-y-6">
-      <h1 className="text-xl font-semibold">予算の追加</h1>
-      <BudgetForm
-        profileId={profileId}
-        categories={categories}
-        onSubmit={createBudget}
-      />
+    <div className="space-y-6">
+      <h1 className="text-2xl font-semibold">予算</h1>
+
+      <div className="rounded border border-zinc-700/60 p-4">
+        <h2 className="text-lg font-semibold mb-4">月次予算を追加</h2>
+        <BudgetForm />
+      </div>
+
+      <div className="rounded border border-zinc-700/60 p-4">
+        <div className="flex items-center justify-between mb-3 gap-3">
+          <h2 className="text-lg font-semibold">今月の予算</h2>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700"
+          />
+        </div>
+        <BudgetList month={month} />
+      </div>
     </div>
   );
 }

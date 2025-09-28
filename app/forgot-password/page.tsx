@@ -1,10 +1,12 @@
-"use client";
-import { useState } from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+// app/forgot-password/page.tsx
+'use client';
+
+import { useState } from 'react';
+import { getSupabaseBrowser } from '@/app/_supabase/client';
 
 export default function ForgotPasswordPage() {
-  const supabase = createClientComponentClient();
-  const [email, setEmail] = useState("");
+  const supabase = getSupabaseBrowser();
+  const [email, setEmail] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -19,28 +21,18 @@ export default function ForgotPasswordPage() {
     });
     setLoading(false);
     if (error) return setErr(error.message);
-    setMsg("再設定用のメールを送信しました。受信箱を確認してください。");
+    setMsg('再設定用のメールを送信しました。受信箱を確認してください。');
   }
 
   return (
     <div className="max-w-sm mx-auto space-y-4">
       <h1 className="text-xl font-bold">パスワード再設定メールを送る</h1>
       <form onSubmit={onSubmit} className="space-y-3">
-        <input
-          type="email"
-          className="input w-full"
-          placeholder="あなたのメールアドレス"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <button className="btn w-full" disabled={loading}>
-          {loading ? "送信中…" : "メールを送信"}
-        </button>
+        <input type="email" className="input w-full" placeholder="メールアドレス" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+        <button className="btn w-full" disabled={loading}>{loading ? '送信中…' : 'メールを送信'}</button>
       </form>
       {msg && <p className="text-green-500 text-sm">{msg}</p>}
       {err && <p className="text-red-500 text-sm">{err}</p>}
     </div>
   );
 }
-
