@@ -1,10 +1,14 @@
 // app/not-found.tsx
-export default function NotFoundPage() {
+import { Suspense } from "react";
+
+export default function NotFound() {
   return (
-    <main className="p-6">
-      <h1 className="text-xl font-bold">ページが見つかりません</h1>
-      <p className="mt-2 text-sm opacity-80">URL をご確認ください。</p>
-    </main>
+    <Suspense fallback={null}>
+      <section className="container mx-auto px-4 py-16">
+        <h1 className="text-2xl font-bold mb-4">ページが見つかりませんでした</h1>
+        <p className="opacity-80">URL を確認するか、ナビゲーションから移動してください。</p>
+      </section>
+    </Suspense>
   );
 }
 

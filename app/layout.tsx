@@ -1,34 +1,35 @@
 // app/layout.tsx
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
-import Header from "@/components/Header";
-import AuthUrlHandler from "@/components/AuthUrlHandler";
-// ↓ トーストを全体で使っている場合だけ有効化（無ければこの import と <ToastHost /> を削除）
+
+import Nav from "@/components/Nav";
 import ToastHost from "@/components/ToastHost";
+import AuthBootstrap from "@/components/AuthBootstrap";
+import AuthUrlHandler from "@/components/AuthUrlHandler"; // ← useSearchParams を使うので Suspense で包む
 
 export const metadata: Metadata = {
   title: "FinLit PWA",
   description: "学んで、記録して、未来を設計しよう。",
+  icons: { icon: "/favicon.ico" },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ja">
-      <body className="bg-zinc-950 text-zinc-100 min-h-screen">
-        {/* どこに着地しても ?code=... を検知してセッション確立 → /settings へ誘導 */}
-        <AuthUrlHandler />
+      <body className="min-h-screen bg-background text-foreground">
+        {/* サーバ側OKな初期化 */}
+        <AuthBootstrap />
 
-        {/* 共通ヘッダー（ナビ＋ログイン導線） */}
-        <Header />
+        {/* useSearchParams を内部で使う可能性があるので Suspense で包む */}
+        <Suspense fallback={null}>
+          <AuthUrlHandler />
+        </Suspense>
 
-        {/* ページ本体 */}
-        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+        <Nav />
 
-        {/* グローバルトースト（使っていれば残す） */}
+        <main className="container mx-auto px-4 py-6">{children}</main>
+
         <ToastHost />
       </body>
     </html>
