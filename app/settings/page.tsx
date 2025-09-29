@@ -2,6 +2,9 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // app/settings/page.tsx
 import dynamic from "next/dynamic";
 import * as React from "react";

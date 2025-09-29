@@ -2,6 +2,9 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // app/learn/page.tsx
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";

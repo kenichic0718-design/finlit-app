@@ -1,5 +1,8 @@
+'use client';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // app/sim/goal-inflation/page.tsx
-"use client";
 import { useMemo, useState } from "react";
 import { pmtForTarget, realRate, seriesFromMonthly, toRealPurchasingPower } from "@/lib/finance";
 import GoalInflationChart from "@/components/GoalInflationChart";
