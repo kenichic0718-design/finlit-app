@@ -1,8 +1,11 @@
+'use client';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // app/learn/stats/page.tsx
-"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";

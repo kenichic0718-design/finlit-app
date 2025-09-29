@@ -2,6 +2,9 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // app/goal/page.tsx
 
 import { useMemo, useState } from 'react';
