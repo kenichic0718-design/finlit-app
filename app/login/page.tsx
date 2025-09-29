@@ -2,9 +2,6 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 // app/login/page.tsx（置換：GitHubボタンは削除）
 import * as React from "react";
 import { getSupabaseClient } from "@/app/_supabase/client";
