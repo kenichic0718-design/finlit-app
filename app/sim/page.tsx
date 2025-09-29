@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // app/sim/page.tsx
-export const dynamic = "force-dynamic";
 export default function SimIndex() {
   const Item = ({ title, desc, href }:{title:string;desc:string;href:string}) => (
     <a href={href} className="block border border-line rounded-2xl p-4 hover:bg-white/5 transition">
