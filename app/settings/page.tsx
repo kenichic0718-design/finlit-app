@@ -1,23 +1,16 @@
-'use client';
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// app/settings/page.tsx
-import dynamic from "next/dynamic";
-import * as React from "react";
+import { Suspense } from 'react';
+import { unstable_noStore as noStore } from "next/cache";
+import PageClient from './_PageClient';
 
-const CategoryManager = dynamic(() => import("@/components/CategoryManager"), { ssr: false });
-const AuthStatus = dynamic(() => import("@/components/AuthStatus"), { ssr: false });
-
-export default function SettingsPage() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">設定</h1>
-        <AuthStatus />
-      </div>
-      <CategoryManager />
-    </div>
+export default function Page() {
+    noStore();
+return (
+    <Suspense fallback={null}>
+      <PageClient />
+    </Suspense>
   );
 }
-

@@ -1,11 +1,16 @@
-'use client';
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// app/log/page.tsx
-import LogForm from "./_LogForm";
+import { Suspense } from 'react';
+import { unstable_noStore as noStore } from "next/cache";
+import PageClient from './_PageClient';
 
 export default function Page() {
-  return <LogForm />;
+    noStore();
+return (
+    <Suspense fallback={null}>
+      <PageClient />
+    </Suspense>
+  );
 }
-
