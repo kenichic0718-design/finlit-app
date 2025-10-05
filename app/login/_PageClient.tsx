@@ -2,7 +2,7 @@
 
 // app/login/page.tsx（置換：GitHubボタンは削除）
 import * as React from "react";
-import { getSupabaseClient } from "@/app/_supabase/client";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import { toast } from "@/components/ToastHost";
 
 export default function LoginPage() {

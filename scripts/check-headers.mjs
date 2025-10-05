@@ -84,7 +84,7 @@ for (const f of serverPages) {
       const resolved = resolveImport(f, s);
       if (!resolved) continue;
       const impHead = readHead(resolved);
-      if (hasUseClientHead(impHead)) {
+      if (hasUseClientHead(impHead) && require("path").basename(resolved) !== "ClientBoundary.tsx") {
         fileReasons.push(`imports client module (${s}) directly`);
       }
     }

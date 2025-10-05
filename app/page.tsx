@@ -1,13 +1,8 @@
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-import { Suspense } from "react";
-import HomeClient from "./_HomeClient";
-
-export default function Page() {
+export default function Home() {
   return (
-    <Suspense fallback={null}>
-      <HomeClient />
-    </Suspense>
+    <main style={{padding:24,fontFamily:'system-ui'}}>
+      <h1>FinLit (debug)</h1>
+      <p>It works (root page)</p>
+    </main>
   );
 }

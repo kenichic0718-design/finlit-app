@@ -2,7 +2,7 @@
 "use client";
 import { useEffect } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import { getSupabaseClient } from "@/app/_supabase/client";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 export default function AuthUrlHandler() {
   const sp = useSearchParams();

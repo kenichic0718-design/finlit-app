@@ -3,7 +3,7 @@
 // app/forgot-password/page.tsx
 
 import { useState } from 'react';
-import { getSupabaseBrowser } from '@/app/_supabase/client';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 export default function ForgotPasswordPage() {
   const supabase = getSupabaseBrowser();

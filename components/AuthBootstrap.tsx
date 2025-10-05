@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { getSupabaseBrowser } from '@/app/_supabase/client';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 /**
  * 匿名/既存セッションを1回だけウォームアップするための軽量ブートストラップ。

@@ -3,7 +3,7 @@
 // app/reset-password/page.tsx
 
 import { useEffect, useState } from 'react';
-import { getSupabaseBrowser } from '@/app/_supabase/client';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 export default function ResetPasswordPage() {
   const supabase = getSupabaseBrowser();
