@@ -3,7 +3,7 @@
 // app/forgot-password/page.tsx
 
 import { useState } from 'react';
-import { getSupabaseBrowser } from '@/app/_supabase/client';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 export default function ForgotPasswordPage() {
   const supabase = getSupabaseBrowser();
@@ -18,7 +18,7 @@ export default function ForgotPasswordPage() {
     setErr(null);
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${location.origin}/reset-password`,
+      redirectTo: `${(process.env.NEXT_PUBLIC_SITE_URL ?? (typeof window !== "undefined" ? window.location.origin : ""))}/reset-password`,
     });
     setLoading(false);
     if (error) return setErr(error.message);

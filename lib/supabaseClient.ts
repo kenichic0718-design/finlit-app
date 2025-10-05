@@ -2,7 +2,7 @@
 'use client';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabaseBrowser } from '@/app/_supabase/client';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 /** 互換API：旧名の getSupabaseClient を新実装に委譲 */
 export function getSupabaseClient(): SupabaseClient {

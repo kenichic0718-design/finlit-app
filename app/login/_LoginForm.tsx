@@ -1,7 +1,7 @@
 // app/login/_LoginForm.tsx
 'use client';
 import { useState } from 'react';
-import { getSupabaseBrowser } from '@/app/_supabase/client';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 export default function LoginForm() {
   const supabase = getSupabaseBrowser();

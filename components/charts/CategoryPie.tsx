@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { getSupabaseBrowser } from "@/app/_supabase/client";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 type Row = { category: string; total: number };
 
