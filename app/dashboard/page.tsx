@@ -1,16 +1,12 @@
+import 'server-only';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-import { Suspense } from 'react';
-import { unstable_noStore as noStore } from "next/cache";
-import PageClient from './_PageClient';
-
-export default function Page() {
-    noStore();
-return (
-    <Suspense fallback={null}>
-      <PageClient />
-    </Suspense>
+import React from 'react';
+export default function Dashboard() {
+  return (
+    <section className="container mx-auto px-4 py-16">
+      <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
+      <p className="opacity-80">（本体UIは順次クライアントコンポーネントへ切り出し）</p>
+    </section>
   );
 }

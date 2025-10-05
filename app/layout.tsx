@@ -1,4 +1,6 @@
 // app/layout.tsx
+export const runtime = 'nodejs';
+
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import "./globals.css";

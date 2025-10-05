@@ -21,7 +21,7 @@ export default function LoginPage() {
         // 🔴 いま開いているドメインに必ず戻す（localhost でも Vercel でもOK）
         emailRedirectTo:
           typeof window !== "undefined"
-            ? `${window.location.origin}/auth/callback?redirect_to=/settings`
+            ? `${(process.env.NEXT_PUBLIC_SITE_URL ?? (typeof window !== "undefined" ? window.location.origin : ""))}/auth/callback?redirect_to=/settings`
             : undefined,
       },
     });

@@ -1,57 +1,61 @@
-// app/_supabase/server.ts
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js';
-
-/** Edge/Node どちらでも動くサーバー用クライアント */
-export function createClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  if (!url || !anon) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
-
-  const store = cookies();
-
-  return createServerClient(url, anon, {
-    cookies: {
-      get(name) {
-        return store.get(name)?.value;
-      },
-      set(name, value, options) {
-        // Vercel Edge/Node で動く書き方
-        try {
-          store.set({ name, value, ...options });
-        } catch {
-          // no-op（ビルド時など cookies が書けない環境向け）
-        }
-      },
-      remove(name, options) {
-        try {
-          store.set({ name, value: '', ...options, maxAge: 0 });
-        } catch {}
-      },
+import { cookies as nextCookies } from 'next/headers';
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './env';
+export const runtime = 'nodejs';
+function cookieAdapterForHeaders() {
+  const cookieStore = nextCookies();
+  return {
+    get(name: string) {
+      return cookieStore.get(name)?.value;
     },
+    set(name: string, value: string, options: CookieOptions) {
+      cookieStore.set(name, value, options as any);
+    },
+    remove(name: string, options: CookieOptions) {
+      cookieStore.set(name, '', { ...options, maxAge: 0 } as any);
+    },
+  };
+}
+export function cookieAdapterForMiddleware(req: NextRequest, res: NextResponse) {
+return {
+    get(name: string) {
+      return req.cookies.get(name)?.value;
+    },
+    set(name: string, value: string, options: CookieOptions) {
+      res.cookies.set(name, value, options as any);
+    },
+    remove(name: string, options: CookieOptions) {
+      res.cookies.set(name, '', { ...options, maxAge: 0 } as any);
+    },
+  };
+}
+export function createSupabaseServerClient() {
+return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookies: cookieAdapterForHeaders(),
   });
 }
-
-/** 管理者操作が必要なとき用（RLSを回避して profiles を作るなど） */
-export function getSupabaseAdmin(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  if (!url || !service) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
-
-  return createSupabaseClient(url, service);
+export function createSupabaseMiddlewareClient(req: NextRequest, res: NextResponse) {
+return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookies: cookieAdapterForMiddleware(req, res),
+  });
 }
-
-/** プロフィール行が無ければ upsert するユーティリティ（APIから呼び出し想定） */
-export async function ensureProfile(userId: string) {
-  const admin = getSupabaseAdmin();
-  await admin.from('profiles').upsert({ id: userId }, { onConflict: 'id' });
+export async function ensureProfile() {
+const supabase = createSupabaseServerClient();
+const { data: { user } } = await supabase.auth.getUser();
+if (!user) return null;
+const { data: rows, error: selErr } = await supabase
+.from('profiles')
+.select('*')
+.eq('id', user.id)
+.limit(1);
+if (selErr) return null;
+if (rows?.[0]) return rows[0];
+const { data: inserted, error: insErr } = await supabase
+.from('profiles')
+.insert({ id: user.id })
+.select()
+.limit(1);
+if (insErr || !inserted?.[0]) return null;
+return inserted[0];
 }
-
-/** env チェック用の簡易関数（エラーメッセージ短縮） */
-export function envReady() {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    throw new Error('Supabase env not ready');
-  }
-}
-
