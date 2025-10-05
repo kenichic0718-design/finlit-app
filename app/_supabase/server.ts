@@ -1,61 +1,29 @@
-import { cookies as nextCookies } from 'next/headers';
-import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './env';
-export const runtime = 'nodejs';
-function cookieAdapterForHeaders() {
-  const cookieStore = nextCookies();
-  return {
-    get(name: string) {
-      return cookieStore.get(name)?.value;
-    },
-    set(name: string, value: string, options: CookieOptions) {
-      cookieStore.set(name, value, options as any);
-    },
-    remove(name: string, options: CookieOptions) {
-      cookieStore.set(name, '', { ...options, maxAge: 0 } as any);
-    },
-  };
+import 'server-only'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
+import { createClient as createAdminClient, type SupabaseClient } from '@supabase/supabase-js'
+const url  = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const service = process.env.SUPABASE_SERVICE_ROLE_KEY
+export function envReady(): boolean {
+  const ok = !!url && !!anon
+  if (!ok) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  return true
 }
-export function cookieAdapterForMiddleware(req: NextRequest, res: NextResponse) {
-return {
-    get(name: string) {
-      return req.cookies.get(name)?.value;
-    },
-    set(name: string, value: string, options: CookieOptions) {
-      res.cookies.set(name, value, options as any);
-    },
-    remove(name: string, options: CookieOptions) {
-      res.cookies.set(name, '', { ...options, maxAge: 0 } as any);
-    },
-  };
+export function getSupabaseServer(): SupabaseClient {
+  const store = cookies()
+  return createServerClient(url, anon, {
+    cookies: {
+      get(name: string) { return store.get(name)?.value },
+      set(name: string, value: string, options: any) { store.set({ name, value, ...options }) },
+      remove(name: string, options: any) { store.set({ name, value: '', ...options, maxAge: 0 }) },
+    }
+  })
 }
-export function createSupabaseServerClient() {
-return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies: cookieAdapterForHeaders(),
-  });
+export const createClient = getSupabaseServer
+export function getSupabaseAdmin(): SupabaseClient {
+  if (!service) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY')
+  // Service Role は Cookie 連携不要なので supabase-js の純粋クライアントで OK
+  return createAdminClient(url, service)
 }
-export function createSupabaseMiddlewareClient(req: NextRequest, res: NextResponse) {
-return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies: cookieAdapterForMiddleware(req, res),
-  });
-}
-export async function ensureProfile() {
-const supabase = createSupabaseServerClient();
-const { data: { user } } = await supabase.auth.getUser();
-if (!user) return null;
-const { data: rows, error: selErr } = await supabase
-.from('profiles')
-.select('*')
-.eq('id', user.id)
-.limit(1);
-if (selErr) return null;
-if (rows?.[0]) return rows[0];
-const { data: inserted, error: insErr } = await supabase
-.from('profiles')
-.insert({ id: user.id })
-.select()
-.limit(1);
-if (insErr || !inserted?.[0]) return null;
-return inserted[0];
-}
+export type { SupabaseClient }

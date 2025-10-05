@@ -1,22 +1,12 @@
-k// app/api/profile/route.ts
-export const runtime = 'nodejs';
+import { NextResponse } from 'next/server'
+import { getSupabaseRoute } from '@/app/_supabase/route'
+export async function GET() {
+  const supabase = getSupabaseRoute()
+  const { data: { user }, error } = await supabase.auth.getUser()
 
-import { NextResponse } from 'next/server';
-import { cookies, headers } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 401 })
+  if (!user)   return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
 
-export async function GET(req: Request) {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies, headers }
-  );
-
-  const { data: { user } } = await supabase.auth.getUser();
-
-  return NextResponse.json({
-    ok: true,
-    user: user ? { id: user.id, email: user.email } : null,
-  });
+  // 必要に応じて profiles テーブルを読むなどの処理を後で追加
+  return NextResponse.json({ ok: true, user })
 }
-
