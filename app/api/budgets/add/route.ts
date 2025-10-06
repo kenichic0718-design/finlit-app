@@ -1,6 +1,6 @@
 // app/api/budgets/add/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getSupabaseServer as createClient } from '@/lib/supabase/server';
 
 export async function POST(req: Request) {
   const supabase = createClient();

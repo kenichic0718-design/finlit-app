@@ -1,10 +1,7 @@
-// app/api/logs/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServer } from '@/lib/supabase/server'
 import * as LogsTypes from '@/types/logs'
-
 const LOGS_TABLE: string = (LogsTypes as any).LOGS_TABLE ?? 'logs'
-
 export async function GET(req: NextRequest) {
   try {
     const supabase = getSupabaseServer()
@@ -28,4 +25,3 @@ export async function GET(req: NextRequest) {
     )
   }
 }
-
