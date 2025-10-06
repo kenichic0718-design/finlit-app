@@ -1,5 +1,5 @@
 // lib/supabase/server.ts
-'use server';
+// ★ 'use server' は置かない（ここはユーティリティ）
 
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
@@ -10,7 +10,7 @@ function cookieAdapter() {
   const store = cookies();
 
   return {
-    // --- 現行 API ---
+    // 現行 API
     get(name: string) {
       return store.get(name)?.value;
     },
@@ -18,18 +18,18 @@ function cookieAdapter() {
       try {
         store.set({ name, value, ...(options ?? {}) });
       } catch {
-        // read-only 環境でも落ちないように
+        // read-only 環境（Edge 等）でも落ちないように握り潰す
       }
     },
     remove(name: string, options?: CookieOptions) {
       try {
         store.set({ name, value: '', ...(options ?? {}), maxAge: 0 });
       } catch {
-        // read-only 環境でも落ちないように
+        /* noop */
       }
     },
 
-    // --- 互換 API（@supabase/ssr の一部バージョンが要求）---
+    // 互換 API（@supabase/ssr の一部が要求）
     getAll(): { name: string; value: string }[] {
       try {
         return store.getAll().map((c) => ({ name: c.name, value: c.value }));
