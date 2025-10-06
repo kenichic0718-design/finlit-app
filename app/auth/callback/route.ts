@@ -1,35 +1,36 @@
 // app/auth/callback/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseServer } from '@/lib/supabase/server';
+
+export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { NextResponse } from 'next/server';
-import { cookies, headers } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
+export async function GET(req: NextRequest) {
+  // ログに残す（デバッグ用）
+  console.log('[AUTH_CB]', req.url);
 
-export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
-  const next = url.searchParams.get('next') ?? '/dashboard';
+  const redirectTo = url.searchParams.get('redirect_to') || '/settings';
 
   if (!code) {
-    // code が無いときはログインに戻す
-    return NextResponse.redirect(new URL('/login?error=missing_code', req.url));
+    const u = new URL('/login?error=missing_code', req.url);
+    return NextResponse.redirect(u);
   }
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies, headers } // ← Next.js 組込みの cookies()/headers() を渡す
-  );
+  const supabase = getSupabaseServer();
 
-  // Magic Link の code をセッションに交換（ここで auth cookie が Set-Cookie される）
+  // Supabase のコード交換
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-  if (error) {
-    // 失敗時はログインに戻す
-    return NextResponse.redirect(new URL(`/login?error=cb_${encodeURIComponent(error.message)}`, req.url));
-  }
+  // 失敗時は login にリダイレクトしてエラー表示
+  const dest = new URL(
+    error
+      ? `/login?error=${encodeURIComponent(error.message)}`
+      : redirectTo,
+    req.url
+  );
 
-  // 成功したら任意の場所へ
-  return NextResponse.redirect(new URL(next, req.url));
+  return NextResponse.redirect(dest);
 }
 

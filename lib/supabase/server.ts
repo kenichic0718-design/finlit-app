@@ -1,36 +1,65 @@
 // lib/supabase/server.ts
-import 'server-only';
+'use server';
+
 import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-const URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const SVC  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+type SetAllCookie = { name: string; value: string; options?: CookieOptions };
 
-export const envReady =
-  Boolean(URL) && Boolean(ANON);
+function cookieAdapter() {
+  const store = cookies();
 
-export function getSupabaseServer() {
-  const cookieStore = cookies();
-  return createServerClient(URL, ANON, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: any) {
-        cookieStore.set({ name, value, ...options });
-      },
-      remove(name: string, options: any) {
-        cookieStore.set({ name, value: '', ...options, maxAge: 0 });
-      },
+  return {
+    // --- 現行 API ---
+    get(name: string) {
+      return store.get(name)?.value;
     },
-  });
+    set(name: string, value: string, options?: CookieOptions) {
+      try {
+        store.set({ name, value, ...(options ?? {}) });
+      } catch {
+        // read-only 環境でも落ちないように
+      }
+    },
+    remove(name: string, options?: CookieOptions) {
+      try {
+        store.set({ name, value: '', ...(options ?? {}), maxAge: 0 });
+      } catch {
+        // read-only 環境でも落ちないように
+      }
+    },
+
+    // --- 互換 API（@supabase/ssr の一部バージョンが要求）---
+    getAll(): { name: string; value: string }[] {
+      try {
+        return store.getAll().map((c) => ({ name: c.name, value: c.value }));
+      } catch {
+        return [];
+      }
+    },
+    setAll(all: SetAllCookie[]) {
+      try {
+        for (const { name, value, options } of all ?? []) {
+          store.set({ name, value, ...(options ?? {}) });
+        }
+      } catch {
+        /* noop */
+      }
+    },
+  };
 }
 
-// 管理APIが必要な場合のみ使用（RLSを超える処理）
+/** 認証つき通常サーバールート用（Route Handlers, Server Components など） */
+export function getSupabaseServer() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createServerClient(url, anon, { cookies: cookieAdapter() });
+}
+
+/** （必要なら）サービスロールで使う管理クライアント */
 export function getSupabaseAdmin() {
-  if (!SVC) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
-  return createAdminClient(URL, SVC);
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const svc = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createServerClient(url, svc, { cookies: cookieAdapter() });
 }
 
