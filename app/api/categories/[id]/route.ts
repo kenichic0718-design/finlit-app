@@ -1,6 +1,6 @@
 // app/api/categories/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseRoute } from "@/app/_supabase/route";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 function ok(data: any = {}) {
   return NextResponse.json({ ok: true, ...data });
@@ -14,7 +14,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = getSupabaseRoute();
+    const supabase = getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return ng("sign_in_required", 401);
 
@@ -42,7 +42,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = getSupabaseRoute();
+    const supabase = getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return ng("sign_in_required", 401);
 

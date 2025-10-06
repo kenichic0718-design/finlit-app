@@ -1,6 +1,6 @@
 // app/api/categories/reorder/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin, envReady } from "@/app/_supabase/server";
+import { getSupabaseAdmin, envReady } from "@/lib/supabase/server";
 
 /**
  * POST /api/categories/reorder

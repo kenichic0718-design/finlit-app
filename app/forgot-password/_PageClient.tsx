@@ -1,6 +1,5 @@
+// app/forgot-password/_PageClient.tsx
 'use client';
-
-// app/forgot-password/page.tsx
 
 import { useState } from 'react';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
@@ -17,9 +16,18 @@ export default function ForgotPasswordPage() {
     setMsg(null);
     setErr(null);
     setLoading(true);
+
+    const origin =
+      typeof window !== 'undefined'
+        ? window.location.origin
+        : process.env.NEXT_PUBLIC_SITE_URL || '';
+
+    const redirectTo = new URL('/reset-password', origin).toString();
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${(process.env.NEXT_PUBLIC_SITE_URL ?? (typeof window !== "undefined" ? window.location.origin : ""))}/reset-password`,
+      redirectTo,
     });
+
     setLoading(false);
     if (error) return setErr(error.message);
     setMsg('再設定用のメールを送信しました。受信箱を確認してください。');
@@ -29,11 +37,21 @@ export default function ForgotPasswordPage() {
     <div className="max-w-sm mx-auto space-y-4">
       <h1 className="text-xl font-bold">パスワード再設定メールを送る</h1>
       <form onSubmit={onSubmit} className="space-y-3">
-        <input type="email" className="input w-full" placeholder="メールアドレス" value={email} onChange={(e)=>setEmail(e.target.value)} required />
-        <button className="btn w-full" disabled={loading}>{loading ? '送信中…' : 'メールを送信'}</button>
+        <input
+          type="email"
+          className="input w-full"
+          placeholder="メールアドレス"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <button className="btn w-full" disabled={loading}>
+          {loading ? '送信中…' : 'メールを送信'}
+        </button>
       </form>
       {msg && <p className="text-green-500 text-sm">{msg}</p>}
       {err && <p className="text-red-500 text-sm">{err}</p>}
     </div>
   );
 }
+

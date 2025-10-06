@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
-import { envReady, getSupabaseAdmin } from "@/app/_supabase/server";
+import { envReady, getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Cookie 名は過去互換のため2つ見る
 const CANDIDATE_COOKIE_NAMES = ["finlit_vid", "vid"];

@@ -1,6 +1,6 @@
 // app/api/categories/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseRoute } from "@/app/_supabase/route";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 function ok(data: any = {}) {
   return NextResponse.json({ ok: true, ...data });
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const kind = (url.searchParams.get("kind") || "expense") as "expense" | "income";
   try {
-    const supabase = getSupabaseRoute();
+    const supabase = getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return ok({ guest: true, items: [] });
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 // POST /api/categories { name, kind, order_index? }
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getSupabaseRoute();
+    const supabase = getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return ng("sign_in_required", 401);
 

@@ -1,59 +1,64 @@
 // app/login/LoginForm.tsx
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import React, { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 export default function LoginForm() {
-  const [email, setEmail] = useState('')
-  const [sending, setSending] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
+  const supabase = getSupabaseBrowser();
+  const qs = useSearchParams();
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const [email, setEmail] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault()
-    setSending(true)
-    setMsg(null)
-    try {
-      // 開発中は localhost:3100、Vercel では NEXT_PUBLIC_SITE_URL を使う
-      const site = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3100'
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: `${site}/auth/callback` },
-      })
-      if (error) throw error
-      setMsg('ログイン用のリンクをメールで送信しました。メールを確認してください。')
-    } catch (err: any) {
-      setMsg(err?.message ?? '送信に失敗しました')
-    } finally {
-      setSending(false)
-    }
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    setErr(null);
+    setLoading(true);
+
+    // いま開いているオリジンをそのまま採用（localhost/127/本番 すべてOK）
+    const origin =
+      typeof window !== 'undefined'
+        ? window.location.origin
+        : process.env.NEXT_PUBLIC_SITE_URL ?? '';
+
+    // 成功後に戻したい場所（なければ /settings）
+    const redirectToParam = qs.get('redirect_to') ?? '/settings';
+
+    // email リンクの着地点（/auth/callback に redirect_to を渡す）
+    const emailRedirectTo = new URL('/auth/callback', origin);
+    emailRedirectTo.searchParams.set('redirect_to', redirectToParam);
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: emailRedirectTo.toString() },
+    });
+
+    setLoading(false);
+    if (error) return setErr(error.message);
+    setMsg('マジックリンクを送信しました。メールをご確認ください。');
   }
 
   return (
-    <form onSubmit={handleSend} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-3">
       <input
         type="email"
-        required
+        className="input w-full"
+        placeholder="you@example.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        placeholder="you@example.com"
-        className="w-full rounded border px-3 py-2"
+        required
       />
-      <button
-        type="submit"
-        disabled={sending}
-        className="rounded px-4 py-2 border"
-      >
-        {sending ? '送信中…' : 'メールでログインリンクを送る'}
+      <button className="btn" disabled={loading}>
+        {loading ? '送信中…' : 'マジックリンクを送る'}
       </button>
-
-      {msg && <p className="mt-3 opacity-80">{msg}</p>}
+      {msg && <p className="text-green-600 text-sm">{msg}</p>}
+      {err && <p className="text-red-600 text-sm">{err}</p>}
     </form>
-  )
+  );
 }
 

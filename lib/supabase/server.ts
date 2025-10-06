@@ -1,65 +1,69 @@
 // lib/supabase/server.ts
-// ★ 'use server' は置かない（ここはユーティリティ）
+// ─────────────────────────────────────────────────────────────
+// サーバー側（Route Handlers / Server Components）で使う Supabase クライアント。
+// - createServerClient: Cookie アダプタは get / set / remove のみ（getAll/setAll 不要）
+// - 管理クライアント（サービスロール）は cookie 不要
+// - 旧コード互換の envReady() も提供
+// ─────────────────────────────────────────────────────────────
 
-import { cookies } from 'next/headers';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { cookies } from 'next/headers'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-type SetAllCookie = { name: string; value: string; options?: CookieOptions };
+// Database 型をお持ちなら import して差し替えてください。
+// import type { Database } from '@/types/database'
+type Database = any
 
+/** Next.js の cookies() を Supabase SSR 用にラップ（get / set / remove のみでOK） */
 function cookieAdapter() {
-  const store = cookies();
-
+  const store = cookies()
   return {
-    // 現行 API
     get(name: string) {
-      return store.get(name)?.value;
+      return store.get(name)?.value
     },
-    set(name: string, value: string, options?: CookieOptions) {
+    set(name: string, value: string, options: CookieOptions) {
+      // set は例外化する必要がないため念のため try-catch
       try {
-        store.set({ name, value, ...(options ?? {}) });
+        store.set({ name, value, ...options })
       } catch {
-        // read-only 環境（Edge 等）でも落ちないように握り潰す
+        /* no-op */
       }
     },
-    remove(name: string, options?: CookieOptions) {
+    remove(name: string, options: CookieOptions) {
       try {
-        store.set({ name, value: '', ...(options ?? {}), maxAge: 0 });
+        store.set({ name, value: '', ...options, maxAge: 0 })
       } catch {
-        /* noop */
+        /* no-op */
       }
     },
-
-    // 互換 API（@supabase/ssr の一部が要求）
-    getAll(): { name: string; value: string }[] {
-      try {
-        return store.getAll().map((c) => ({ name: c.name, value: c.value }));
-      } catch {
-        return [];
-      }
-    },
-    setAll(all: SetAllCookie[]) {
-      try {
-        for (const { name, value, options } of all ?? []) {
-          store.set({ name, value, ...(options ?? {}) });
-        }
-      } catch {
-        /* noop */
-      }
-    },
-  };
+  }
 }
 
-/** 認証つき通常サーバールート用（Route Handlers, Server Components など） */
-export function getSupabaseServer() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createServerClient(url, anon, { cookies: cookieAdapter() });
+/** 認証付きの通常サーバー用クライアント（Route Handlers / Server Components 等） */
+export function getSupabaseServer(): SupabaseClient<Database> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  return createServerClient<Database>(url, anon, {
+    cookies: cookieAdapter(),
+  })
 }
 
-/** （必要なら）サービスロールで使う管理クライアント */
-export function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const svc = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createServerClient(url, svc, { cookies: cookieAdapter() });
+/** サービスロール（管理処理向け）。cookie は使わない */
+export function getSupabaseAdmin(): SupabaseClient<Database> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  return createClient<Database>(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    // 解析や管理用途での一時的な読み書きが主なので、念のため no-store
+    global: { fetch: (input, init) => fetch(input, { cache: 'no-store', ...init }) },
+  })
+}
+
+/** 旧実装互換：最低限の環境変数が揃っているか簡易チェック */
+export function envReady(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  )
 }
 

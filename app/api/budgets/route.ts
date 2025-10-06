@@ -1,6 +1,6 @@
 // app/api/budgets/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseRoute } from "@/app/_supabase/route";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 type Item = {
   category: string;
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const month = toYYYYMM(url.searchParams.get("month"));
-    const supabase = getSupabaseRoute();
+    const supabase = getSupabaseServer();
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
 // ---------- POST /api/budgets ----------
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getSupabaseRoute();
+    const supabase = getSupabaseServer();
     const {
       data: { user },
     } = await supabase.auth.getUser();

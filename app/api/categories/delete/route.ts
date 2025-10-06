@@ -1,6 +1,6 @@
 // app/api/categories/delete/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin, envReady } from "@/app/_supabase/server";
+import { getSupabaseAdmin, envReady } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
 export async function POST(req: Request) {
