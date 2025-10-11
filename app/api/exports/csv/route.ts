@@ -1,6 +1,6 @@
 // app/api/exports/csv/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseRoute } from "@/app/_supabase/route";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 function ymOrThisMonth(ym?: string | null) {
   const now = new Date();
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const end = new Date(start);
   end.setMonth(end.getMonth() + 1);
 
-  const supabase = getSupabaseRoute();
+  const supabase = getSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();

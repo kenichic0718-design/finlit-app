@@ -1,6 +1,6 @@
 // app/api/insights/monthly/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseRoute } from "@/app/_supabase/route";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const ym = url.searchParams.get("month") ?? url.searchParams.get("ym") ?? undefined;
     const { start, end, month } = ymRange(ym);
 
-    const supabase = getSupabaseRoute();
+    const supabase = getSupabaseServer();
     const {
       data: { user },
     } = await supabase.auth.getUser();

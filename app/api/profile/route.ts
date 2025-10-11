@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getSupabaseRoute } from '@/app/_supabase/route'
+import { getSupabaseServer } from '@/lib/supabase/server'
 export async function GET() {
-  const supabase = getSupabaseRoute()
+  const supabase = getSupabaseServer()
   const { data: { user }, error } = await supabase.auth.getUser()
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 401 })

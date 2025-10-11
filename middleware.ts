@@ -1,45 +1,28 @@
-import type { NextRequest } from 'next/server';
-import { NextResponse } from 'next/server';
-const PROTECTED_PREFIXES = [
-  '/dashboard',
-  '/log',
-  '/budgets',
-  '/categories',
-  '/settings',
-  '/goal',
-  '/learn',
-  '/sim',
-];
+// middleware.ts
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+// 本番ホスト名（必ずドメインだけ。httpsは付けない）
+const PROD_HOST = "finlit-app-chi.vercel.app";
+
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-  // 免除: api, 静的, auth callback, login, 画像やアセットなど
-  if (
-    pathname.startsWith('/api') ||
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/auth/callback') ||
-    pathname.startsWith('/login') ||
-    pathname === '/' // トップは公開のまま
-  ) {
+  const url = new URL(req.url);
+  const host = req.headers.get("host") || "";
+
+  // すでに本番なら通過
+  if (host === PROD_HOST) {
     return NextResponse.next();
   }
 
-  // 対象: PROTECTED_PREFIXES に一致する場合のみ
-  const needAuth = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
-  if (!needAuth) return NextResponse.next();
-
-  // Supabase の Cookie（@supabase/ssr 既定）の有無で簡易判定
-  const hasAccess =
-    req.cookies.has('sb-access-token') || req.cookies.has('sb:token');
-
-  if (!hasAccess) {
-    const url = req.nextUrl.clone();
-    url.pathname = '/login';
-    url.searchParams.set('redirect_to', pathname);
-    return NextResponse.redirect(url);
-  }
-
-  return NextResponse.next();
+  // それ以外（*.vercel.app や localhost など）は本番へ 301
+  url.host = PROD_HOST;
+  url.protocol = "https:";
+  return NextResponse.redirect(url, 301);
 }
+
+// 画像/静的ファイルにも適用してOK（HTTP 301 なのでSEO的にも安全）
+// もし除外したい場合は下のmatcherを調整してください
 export const config = {
-  matcher: '/:path*',
+  matcher: ["/:path*"],
 };
+

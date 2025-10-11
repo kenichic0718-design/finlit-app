@@ -2,7 +2,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { createClient } from "@/app/_supabase/server";
+import { getSupabaseServer as createClient } from '@/lib/supabase/server';
 
 const COOKIE_NAME = "vid";
 
