@@ -12,7 +12,7 @@ const supabase = createClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false, // 自前で両方式を処理する
+      detectSessionInUrl: false, // 自前で URL を処理する
     },
   }
 );
@@ -31,14 +31,14 @@ export default function ClientPage() {
       const token_hash = params.get('token_hash');
       const type = params.get('type');
 
-      // ここで # からトークンを拾う（implicit / hash フロー）
-      const hash = typeof window !== 'undefined' ? window.location.hash : '';
-      const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
-      const access_token = hashParams.get('access_token');
-      const refresh_token = hashParams.get('refresh_token');
+      // location.hash をパース（implicit/hash フロー用）
+      const hash = window.location.hash || '';
+      const hp = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+      const access_token = hp.get('access_token');
+      const refresh_token = hp.get('refresh_token');
 
       setDebug({
-        href: typeof window !== 'undefined' ? window.location.href : '',
+        href: window.location.href,
         hasCode: !!code,
         hasTokenHash: !!token_hash,
         hashHasAccess: !!access_token,
@@ -48,7 +48,7 @@ export default function ClientPage() {
       });
 
       try {
-        // 1) code フロー
+        // 1) 認可コードフロー
         if (code) {
           setMsg('Exchanging auth code…');
           const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -61,7 +61,7 @@ export default function ClientPage() {
           return;
         }
 
-        // 2) hash(implicit) フロー
+        // 2) implicit/hash フロー
         if (access_token && refresh_token) {
           setMsg('Restoring session from hash…');
           const { error } = await supabase.auth.setSession({
@@ -70,7 +70,7 @@ export default function ClientPage() {
           });
           if (error) throw error;
 
-          // # 以下を消す
+          // # を消す（F5で再実行されないように）
           window.history.replaceState(null, '', window.location.pathname + window.location.search);
           setMsg('Signed in. Redirecting…');
           router.replace(redirectTo);
@@ -92,7 +92,7 @@ export default function ClientPage() {
           return;
         }
 
-        // 4) どれも無い
+        // 4) 何もない
         setMsg('No auth code/token in URL. Open the magic link from your email on this device.');
       } catch (e: any) {
         console.error('[/auth/callback] error:', e);
@@ -100,8 +100,7 @@ export default function ClientPage() {
         setTimeout(() => router.replace('/login'), 1500);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [params, router]);
 
   return (
     <main style={{ padding: 24 }}>
