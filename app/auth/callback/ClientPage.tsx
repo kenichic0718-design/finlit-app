@@ -12,7 +12,7 @@ const supabase = createClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false, // 自前で code を処理する
+      detectSessionInUrl: false, // 自前で両方式を処理する
     },
   }
 );
@@ -26,31 +26,58 @@ export default function ClientPage() {
 
   useEffect(() => {
     (async () => {
+      const redirectTo = params.get('redirect_to') || '/settings';
       const code = params.get('code');
       const token_hash = params.get('token_hash');
-      const type = params.get('type'); // magiclink / recovery など
-      const redirectTo = params.get('redirect_to') || '/settings';
+      const type = params.get('type');
+
+      // ここで # からトークンを拾う（implicit / hash フロー）
+      const hash = typeof window !== 'undefined' ? window.location.hash : '';
+      const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+      const access_token = hashParams.get('access_token');
+      const refresh_token = hashParams.get('refresh_token');
 
       setDebug({
-        href: window.location.href,
+        href: typeof window !== 'undefined' ? window.location.href : '',
         hasCode: !!code,
         hasTokenHash: !!token_hash,
+        hashHasAccess: !!access_token,
+        hashHasRefresh: !!refresh_token,
         type,
         redirectTo,
       });
 
       try {
-        // 1) code がある：セッション交換
+        // 1) code フロー
         if (code) {
           setMsg('Exchanging auth code…');
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
+
+          // URL の code を消す
+          window.history.replaceState(null, '', window.location.pathname);
           setMsg('Signed in. Redirecting…');
           router.replace(redirectTo);
           return;
         }
 
-        // 2) token_hash + type（recovery など）で verify
+        // 2) hash(implicit) フロー
+        if (access_token && refresh_token) {
+          setMsg('Restoring session from hash…');
+          const { error } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+          if (error) throw error;
+
+          // # 以下を消す
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          setMsg('Signed in. Redirecting…');
+          router.replace(redirectTo);
+          return;
+        }
+
+        // 3) verifyOtp（recovery など）
         if (token_hash && type) {
           setMsg('Verifying token…');
           const { error } = await supabase.auth.verifyOtp({
@@ -58,18 +85,19 @@ export default function ClientPage() {
             token_hash,
           });
           if (error) throw error;
+
+          window.history.replaceState(null, '', window.location.pathname);
           setMsg('Token verified. Redirecting…');
           router.replace(redirectTo);
           return;
         }
 
-        // 3) どちらも無い：そのまま画面に残してデバッグ表示
+        // 4) どれも無い
         setMsg('No auth code/token in URL. Open the magic link from your email on this device.');
       } catch (e: any) {
         console.error('[/auth/callback] error:', e);
         setMsg(`Sign-in failed: ${e?.message || String(e)}`);
-        // 失敗時は 1.2 秒待ってログインへ
-        setTimeout(() => router.replace('/login'), 1200);
+        setTimeout(() => router.replace('/login'), 1500);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -79,8 +107,6 @@ export default function ClientPage() {
     <main style={{ padding: 24 }}>
       <h1 style={{ fontSize: 18, fontWeight: 600 }}>Auth Callback</h1>
       <p style={{ marginTop: 8 }}>{msg}</p>
-
-      {/* デバッグ情報（必要に応じて消してOK） */}
       <pre
         style={{
           marginTop: 16,
