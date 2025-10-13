@@ -1,9 +1,8 @@
-import "server-only";
-import { Suspense } from "react";
-import ClientPage from "./ClientPage";
+kimport 'server-only';
+import { Suspense } from 'react';
+import ClientPage from './ClientPage';
 
-// 事前レンダリングを避け、常に動的にする（ビルド時のエラー回避）
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default function Page() {
