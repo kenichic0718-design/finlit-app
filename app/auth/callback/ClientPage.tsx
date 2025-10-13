@@ -1,123 +1,81 @@
-// app/auth/callback/ClientPage.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createBrowserClient } from '@/lib/supabase/client';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: false, // 自前で URL を処理する
-    },
-  }
-);
+// URL ハッシュを { key: value } にパース
+function parseHash(hash: string): Record<string, string> {
+  const h = hash.startsWith('#') ? hash.slice(1) : hash;
+  return h.split('&').reduce<Record<string, string>>((acc, kv) => {
+    const [k, v] = kv.split('=');
+    if (k) acc[decodeURIComponent(k)] = decodeURIComponent(v ?? '');
+    return acc;
+  }, {});
+}
+
+// redirect_to（/auth/callback?redirect_to=... または #redirect_to=... の両方に対応）
+function getRedirectTo(url: URL, hashParams: Record<string, string>) {
+  const q = url.searchParams.get('redirect_to');
+  return q || hashParams['redirect_to'] || '/settings';
+}
 
 export default function ClientPage() {
   const router = useRouter();
-  const params = useSearchParams();
-
-  const [msg, setMsg] = useState('Processing sign-in…');
-  const [debug, setDebug] = useState<Record<string, any>>({});
+  const supabase = useMemo(() => createBrowserClient(), []);
+  const [message, setMessage] = useState('Processing sign-in…');
 
   useEffect(() => {
     (async () => {
-      const redirectTo = params.get('redirect_to') || '/settings';
-      const code = params.get('code');
-      const token_hash = params.get('token_hash');
-      const type = params.get('type');
-
-      // location.hash をパース（implicit/hash フロー用）
-      const hash = window.location.hash || '';
-      const hp = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
-      const access_token = hp.get('access_token');
-      const refresh_token = hp.get('refresh_token');
-
-      setDebug({
-        href: window.location.href,
-        hasCode: !!code,
-        hasTokenHash: !!token_hash,
-        hashHasAccess: !!access_token,
-        hashHasRefresh: !!refresh_token,
-        type,
-        redirectTo,
-      });
-
       try {
-        // 1) 認可コードフロー
+        const url = new URL(window.location.href);
+
+        // 1) “?code=”（PKCE / OIDC code flow）
+        const code = url.searchParams.get('code');
+
+        // 2) “#access_token=&refresh_token= …”（メールのマジックリンク）
+        const hashParams = parseHash(window.location.hash);
+        const accessToken = hashParams['access_token'];
+        const refreshToken = hashParams['refresh_token'];
+
+        const redirectTo = getRedirectTo(url, hashParams);
+
         if (code) {
-          setMsg('Exchanging auth code…');
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          // Supabase が URL から code を拾って Cookie を設定
+          const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
           if (error) throw error;
 
-          // URL の code を消す
-          window.history.replaceState(null, '', window.location.pathname);
-          setMsg('Signed in. Redirecting…');
+          // URL のコード/ハッシュを消してから遷移
           router.replace(redirectTo);
           return;
         }
 
-        // 2) implicit/hash フロー
-        if (access_token && refresh_token) {
-          setMsg('Restoring session from hash…');
+        if (accessToken && refreshToken) {
+          // ハッシュ方式（magic link）
           const { error } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
+            access_token: accessToken,
+            refresh_token: refreshToken,
           });
           if (error) throw error;
 
-          // # を消す（F5で再実行されないように）
-          window.history.replaceState(null, '', window.location.pathname + window.location.search);
-          setMsg('Signed in. Redirecting…');
           router.replace(redirectTo);
           return;
         }
 
-        // 3) verifyOtp（recovery など）
-        if (token_hash && type) {
-          setMsg('Verifying token…');
-          const { error } = await supabase.auth.verifyOtp({
-            type: type as any,
-            token_hash,
-          });
-          if (error) throw error;
-
-          window.history.replaceState(null, '', window.location.pathname);
-          setMsg('Token verified. Redirecting…');
-          router.replace(redirectTo);
-          return;
-        }
-
-        // 4) 何もない
-        setMsg('No auth code/token in URL. Open the magic link from your email on this device.');
+        // どちらも無い＝メールのリンクを「別デバイス」や「無効化されたタブ」で開いた等
+        setMessage('No auth code/token in URL. Open the magic link from your email on this device.');
       } catch (e: any) {
-        console.error('[/auth/callback] error:', e);
-        setMsg(`Sign-in failed: ${e?.message || String(e)}`);
-        setTimeout(() => router.replace('/login'), 1500);
+        console.error(e);
+        setMessage(`Auth error: ${e?.message || 'unknown error'}`);
       }
     })();
-  }, [params, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <main style={{ padding: 24 }}>
       <h1 style={{ fontSize: 18, fontWeight: 600 }}>Auth Callback</h1>
-      <p style={{ marginTop: 8 }}>{msg}</p>
-      <pre
-        style={{
-          marginTop: 16,
-          padding: 12,
-          background: '#f5f5f5',
-          borderRadius: 8,
-          overflowX: 'auto',
-          fontSize: 12,
-        }}
-      >
-        {JSON.stringify(debug, null, 2)}
-      </pre>
+      <p style={{ marginTop: 8 }}>{message}</p>
     </main>
   );
 }
