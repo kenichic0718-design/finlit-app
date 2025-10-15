@@ -4,11 +4,9 @@ import dynamic from 'next/dynamic';
 
 export const dynamic = 'force-dynamic';
 
-// 遅延読み込み：初期HTMLは軽く、クライアントのみで動く箇所を分離
-const CategoryManagerClient = dynamic(
-  () => import('./CategoryManagerClient'),
-  { ssr: false }
-);
+const CategoryManagerClient = dynamic(() => import('./CategoryManagerClient'), {
+  ssr: false,
+});
 
 export default function CategoriesPage() {
   return (
