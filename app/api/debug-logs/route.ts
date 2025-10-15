@@ -1,29 +1,26 @@
 // app/api/debug-logs/route.ts
 import { NextResponse } from 'next/server';
-import { getSupabaseServer } from '@/lib/supabase/server';
+import { getRouteSupabase } from '@/app/_supabase/route';
 
 export async function GET() {
   try {
-    const supabase = getSupabaseServer();
+    const supabase = getRouteSupabase();
 
-    const [
-      auth,
-      cats,
-      logs,
-    ] = await Promise.all([
-      supabase.auth.getUser(),
-      supabase.from('categories').select('*').limit(20),
-      supabase.from('logs').select('*').order('id', { ascending: false }).limit(20),
-    ]);
+    const auth = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from('logs')
+      .select('id, profile_id, date, amount, memo, is_income')
+      .order('id', { ascending: false })
+      .limit(5);
 
     return NextResponse.json({
-      ok: true,
-      authedUser: auth.data.user ?? null,
-      categories: cats.data ?? [],
-      logs: logs.data ?? [],
-    });
-  } catch (err: any) {
-    return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
+      ok: !error,
+      auth_error: auth.error?.message ?? null,
+      items: data ?? [],
+      error: error?.message ?? null,
+    }, { status: error ? 500 : 200 });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? 'unexpected' }, { status: 500 });
   }
 }
 
