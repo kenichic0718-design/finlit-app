@@ -5,37 +5,35 @@ import { getRouteClient } from '@/app/_supabase/route';
 type RowLoose = {
   id: string;
   name: string;
-  // 存在しない可能性がある列
-  is_income?: boolean | null;
+  is_income?: boolean | null; // 無い環境もある想定
   position?: number | null;
 };
 
 export async function GET() {
   try {
     const supabase = getRouteClient();
-    const base = supabase.from('categories');
+    const from = supabase.from('categories');
 
-    // まず is_income/position 付きで取りにいく
-    let { data, error } = await base
+    // まずフル項目で挑戦
+    let { data, error } = await from
       .select('id,name,is_income,position')
       .order('position', { ascending: true });
 
-    // 列がない等で失敗したら最小構成で再取得
+    // 列が無くて失敗したら最小構成で再取得
     if (error) {
-      // 列未存在エラーなど
-      const retry = await base.select('id,name');
-      data = retry.data as RowLoose[] | null;
+      const retry = await from.select('id,name');
       if (retry.error) {
         return NextResponse.json(
           { ok: false, error: retry.error.message },
           { status: 500 }
         );
       }
+      data = retry.data as RowLoose[] | null;
     }
 
     const rows = (data ?? []) as RowLoose[];
 
-    // APIの期待形に正規化
+    // UI が期待する形に正規化
     const items = rows
       .map((r) => ({
         id: r.id,
@@ -43,11 +41,9 @@ export async function GET() {
         type: r.is_income ? ('income' as const) : ('expense' as const),
         position: r.position ?? 0,
       }))
-      // type -> position -> name の順で並べ替え（UIの見やすさ用）
       .sort((a, b) => {
         if (a.type !== b.type) return a.type < b.type ? -1 : 1;
-        if ((a.position ?? 0) !== (b.position ?? 0))
-          return (a.position ?? 0) - (b.position ?? 0);
+        if (a.position !== b.position) return a.position - b.position;
         return a.name.localeCompare(b.name, 'ja');
       });
 
