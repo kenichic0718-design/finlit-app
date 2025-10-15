@@ -2,23 +2,32 @@
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
+function makeCookieAdapter() {
+  const jar = cookies();
+  return {
+    get(name: string) {
+      return jar.get(name)?.value;
+    },
+    set(name: string, value: string, options?: Parameters<typeof jar.set>[2]) {
+      // next/headers の cookies().set をそのまま使う
+      jar.set(name, value, options);
+    },
+    remove(name: string, options?: Parameters<typeof jar.set>[2]) {
+      // remove 相当：空＋ maxAge:0 をセット
+      jar.set(name, '', { ...options, maxAge: 0 });
+    },
+  };
+}
+
+/** Route Handler 専用 Supabase クライアント */
 export function getRouteSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const store = cookies();
-
-  return createServerClient(url, anon, {
-    cookies: {
-      get(name: string) {
-        return store.get(name)?.value;
-      },
-      set(name: string, value: string, opts: { path?: string; maxAge?: number; domain?: string; sameSite?: 'lax'|'strict'|'none'; secure?: boolean; httpOnly?: boolean }) {
-        store.set({ name, value, ...opts });
-      },
-      remove(name: string, opts?: { path?: string; domain?: string }) {
-        store.delete({ name, ...opts });
-      },
-    },
-  });
+  return createServerClient(url, anon, { cookies: makeCookieAdapter() as any });
 }
+
+// 互換エイリアス（既存コードが getRouteClient を import しても動く）
+export const getRouteClient = getRouteSupabase;
+
+export default getRouteSupabase;
 
