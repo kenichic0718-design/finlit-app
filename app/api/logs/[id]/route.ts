@@ -1,64 +1,50 @@
 // app/api/logs/[id]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { getRouteClient } from '@/app/_supabase/route';
+import { NextResponse, NextRequest } from 'next/server';
+import { getRouteSupabase } from '@/app/_supabase/route';
 
-export const dynamic = 'force-dynamic';
+// 共通: セッション & プロフィールを取る
+async function getAuthedProfile(supabase: ReturnType<typeof getRouteSupabase>) {
+  const { data: { session }, error: sErr } = await supabase.auth.getSession();
+  if (sErr) return { status: 500, json: { ok: false, error: sErr.message } as const };
+  if (!session) return { status: 401, json: { ok: false, error: 'Unauthorized' } as const };
 
-/** 共通: 認証済みユーザーを要求（未ログインなら 401 を返す） */
-async function requireUser() {
-  const sb = getRouteClient();
-  const { data: { user }, error } = await sb.auth.getUser();
-  return { sb, user, error };
+  const { data: profile, error: pErr } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('user_id', session.user.id)
+    .single();
+
+  if (pErr || !profile) {
+    return { status: 401, json: { ok: false, error: 'Profile not found for user' } as const };
+  }
+  return { status: 200, profile };
 }
 
-/** DELETE /api/logs/[id] */
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const { sb, user, error } = await requireUser();
-  if (error || !user) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const idNum = Number(params.id);
-  if (!Number.isFinite(idNum)) {
-    return NextResponse.json({ ok: false, error: 'Invalid id' }, { status: 400 });
-  }
-
-  // 所有権は RLS が保証。id のみで削除を試みる
-  const { data, error: delErr } = await sb
+// ログの所有チェック
+async function assertOwnLog(supabase: ReturnType<typeof getRouteSupabase>, id: string, profileId: string) {
+  const { data: row, error } = await supabase
     .from('logs')
-    .delete()
-    .eq('id', idNum)
-    .select()
-    .maybeSingle();
+    .select('id, profile_id')
+    .eq('id', id)
+    .single();
 
-  if (delErr) {
-    return NextResponse.json({ ok: false, error: delErr.message }, { status: 500 });
+  if (error) return { status: 404, json: { ok: false, error: 'Not found' } as const };
+  if (!row || row.profile_id !== profileId) {
+    return { status: 404, json: { ok: false, error: 'Not found or not owned' } as const };
   }
-  if (!data) {
-    // RLS で弾かれた or そもそも存在しない
-    return NextResponse.json({ ok: false, error: 'Not found or not owned' }, { status: 404 });
-  }
-
-  return NextResponse.json({ ok: true, deleted: 1 });
+  return { status: 200 };
 }
 
-/** PATCH /api/logs/[id]  — amount/memo/is_income/date のいずれかを更新 */
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const { sb, user, error } = await requireUser();
-  if (error || !user) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-  }
+// PATCH /api/logs/:id  — 部分更新（amount, memo, date, is_income, category_id を許可）
+export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
+  const { id } = ctx.params;
+  const supabase = getRouteSupabase(req);
 
-  const idNum = Number(params.id);
-  if (!Number.isFinite(idNum)) {
-    return NextResponse.json({ ok: false, error: 'Invalid id' }, { status: 400 });
-  }
+  const prof = await getAuthedProfile(supabase);
+  if ('json' in prof) return NextResponse.json(prof.json, { status: prof.status });
+
+  const own = await assertOwnLog(supabase, id, prof.profile.id);
+  if ('json' in own) return NextResponse.json(own.json, { status: own.status });
 
   let body: any;
   try {
@@ -67,31 +53,43 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const update: Record<string, any> = {};
-  if (typeof body.amount === 'number') update.amount = body.amount;
-  if (typeof body.memo === 'string') update.memo = body.memo;
-  if (typeof body.is_income === 'boolean') update.is_income = body.is_income;
-  if (typeof body.date === 'string') update.date = body.date;
-
+  // 受け付けるキーだけ通す（不要キーは落とす）
+  const allowedKeys = ['amount', 'memo', 'date', 'is_income', 'category_id'] as const;
+  const update: Record<string, unknown> = {};
+  for (const k of allowedKeys) {
+    if (k in body) update[k] = body[k];
+  }
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ ok: false, error: 'No updatable fields' }, { status: 400 });
   }
 
-  // RLS に任せて id のみで更新
-  const { data, error: upErr } = await sb
+  const { data: updated, error: uErr } = await supabase
     .from('logs')
     .update(update)
-    .eq('id', idNum)
-    .select()
-    .maybeSingle();
+    .eq('id', id)
+    .select('*')
+    .single();
 
-  if (upErr) {
-    return NextResponse.json({ ok: false, error: upErr.message }, { status: 500 });
+  if (uErr) {
+    return NextResponse.json({ ok: false, error: uErr.message }, { status: 400 });
   }
-  if (!data) {
-    return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
-  }
+  return NextResponse.json({ ok: true, item: updated }, { status: 200 });
+}
 
-  return NextResponse.json({ ok: true, item: data });
+// DELETE /api/logs/:id  — 既存の削除が動いていればそのままでOK。念のため置いておきます。
+export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) {
+  const { id } = ctx.params;
+  const supabase = getRouteSupabase(req);
+
+  const prof = await getAuthedProfile(supabase);
+  if ('json' in prof) return NextResponse.json(prof.json, { status: prof.status });
+
+  const own = await assertOwnLog(supabase, id, prof.profile.id);
+  if ('json' in own) return NextResponse.json(own.json, { status: own.status });
+
+  const { error, count } = await supabase.from('logs').delete({ count: 'exact' }).eq('id', id);
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+
+  return NextResponse.json({ ok: true, deleted: count ?? 0 }, { status: 200 });
 }
 
