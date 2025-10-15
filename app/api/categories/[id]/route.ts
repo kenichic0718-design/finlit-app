@@ -1,44 +1,39 @@
 // app/api/categories/[id]/route.ts
-import { NextResponse } from 'next/server';
-
-// ✅ まずはエイリアス版（@）で試す
+import { NextResponse, NextRequest } from 'next/server';
 import { getRouteSupabase } from '@/app/_supabase/route';
 
-// ⬇もしビルドで again 「…getRouteSupabase is not a function」が出たら、
-// この1行を上の行の代わりに使ってください（相対パス直指定版）
-// import { getRouteSupabase } from '../../_supabase/route';
+type Ctx = { params: { id: string } };
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+// DELETE /api/categories/:id
+export async function DELETE(_req: NextRequest, { params }: Ctx) {
   try {
-    const sb = getRouteSupabase();
-    const { error } = await sb.from('categories').delete().eq('id', params.id);
-    if (error) throw error;
-    return NextResponse.json({ ok: true });
+    const id = params?.id;
+    if (!id) {
+      return NextResponse.json({ ok: false, error: 'Missing id' }, { status: 400 });
+    }
+
+    const supabase = getRouteSupabase();
+
+    // 影響行数を確実に取得するため、.select('id') を付ける
+    const { data, error } = await supabase
+      .from('categories')
+      .delete()
+      .eq('id', id)
+      .select('id');
+
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    const deleted = data?.length ?? 0;
+    if (deleted === 0) {
+      // id が違う・RLS で消せない等
+      return NextResponse.json({ ok: false, error: 'Not found', deleted }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, deleted });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message ?? String(e) }, { status: 500 });
-  }
-}
-
-// 名称変更（フロントの「名称変更」ボタンに対応）
-// body: { name: string }
-export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const { name } = await req.json();
-    if (!name) return NextResponse.json({ ok: false, error: 'name required' }, { status: 400 });
-
-    const sb = getRouteSupabase();
-    const { error } = await sb.from('categories').update({ name }).eq('id', params.id);
-    if (error) throw error;
-
-    return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message ?? String(e) }, { status: 500 });
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
   }
 }
 
