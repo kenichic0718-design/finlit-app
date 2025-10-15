@@ -1,69 +1,45 @@
-import { cookies } from 'next/headers';
-import { NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
+// app/api/logs/[id]/route.ts
+import { NextResponse } from 'next/server';
+import { getSupabaseServer } from '@/lib/supabase/server';
 
-function makeSupabase() {
-  const cookieStore = cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () =>
-          cookieStore.getAll().map(c => ({ name: c.name, value: c.value })),
-        setAll: (c) => {
-          c.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
-        },
-      },
-    }
-  );
+type Params = { params: { id: string } };
+
+export async function PATCH(_req: Request, { params }: Params) {
+  try {
+    const supabase = getSupabaseServer();
+    const id = Number(params.id);
+    const body = await _req.json();
+
+    const { data, error } = await supabase
+      .from('logs')
+      .update({
+        amount: body.amount,
+        memo: body.memo ?? null,
+        category_id: body.category_id ?? null,
+        is_income: !!body.is_income,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return NextResponse.json({ ok: true, item: data });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
+  }
 }
 
-export async function PUT(req: NextRequest, props: { params: { id: string } }) {
-  const id = Number(props.params.id);
-  if (!Number.isFinite(id)) {
-    return Response.json({ ok: false, error: 'Invalid id' }, { status: 400 });
+export async function DELETE(_req: Request, { params }: Params) {
+  try {
+    const supabase = getSupabaseServer();
+    const id = Number(params.id);
+
+    const { error } = await supabase.from('logs').delete().eq('id', id);
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
   }
-
-  const supabase = makeSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-
-  const body = await req.json().catch(() => ({}));
-  const patch: Record<string, any> = {};
-  if (typeof body.amount === 'number') patch.amount = body.amount;
-  if (typeof body.memo === 'string') patch.memo = body.memo;
-
-  if (Object.keys(patch).length === 0) {
-    return Response.json({ ok: false, error: 'No fields to update' }, { status: 400 });
-  }
-
-  const { error } = await supabase
-    .from('logs')
-    .update(patch)
-    .eq('id', id)
-    .eq('profile_id', user.id);
-
-  if (error) return Response.json({ ok: false, error: error.message }, { status: 400 });
-  return Response.json({ ok: true });
 }
 
-export async function DELETE(_req: NextRequest, props: { params: { id: string } }) {
-  const id = Number(props.params.id);
-  if (!Number.isFinite(id)) {
-    return Response.json({ ok: false, error: 'Invalid id' }, { status: 400 });
-  }
-
-  const supabase = makeSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-
-  const { error } = await supabase
-    .from('logs')
-    .delete()
-    .eq('id', id)
-    .eq('profile_id', user.id);
-
-  if (error) return Response.json({ ok: false, error: error.message }, { status: 400 });
-  return Response.json({ ok: true });
-}

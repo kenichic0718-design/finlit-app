@@ -1,15 +1,21 @@
-import 'server-only'
-import { cookies } from 'next/headers'
-import { createServerClient, type SupabaseClient } from '@supabase/ssr'
-const url  = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-export function getSupabaseRoute(): SupabaseClient {
-  const store = cookies()
-  return createServerClient(url, anon, {
-    cookies: {
-      get(name: string) { return store.get(name)?.value },
-      set(name: string, value: string, options: any) { store.set({ name, value, ...options }) },
-      remove(name: string, options: any) { store.set({ name, value: '', ...options, maxAge: 0 }) },
-    }
-  })
+// app/_supabase/route.ts
+import { NextResponse } from 'next/server';
+import { getSupabaseServer } from '@/lib/supabase/server';
+
+export async function GET() {
+  try {
+    const supabase = getSupabaseServer();
+    const [sess, prof] = await Promise.all([
+      supabase.auth.getSession(),
+      supabase.from('profile').select('*').limit(1),
+    ]);
+    return NextResponse.json({
+      ok: true,
+      session: sess.data.session ? { user: sess.data.session.user } : null,
+      profileCount: prof.data?.length ?? 0,
+    });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
+  }
 }
+
