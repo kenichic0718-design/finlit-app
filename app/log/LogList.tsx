@@ -5,109 +5,109 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type LogItem = {
   id: number;
-  date: string;       // YYYY-MM-DD
-  amount: number;     // 円
+  date: string; // YYYY-MM-DD
+  amount: number;
   memo: string | null;
-  is_income: boolean; // 収入なら true
+  is_income: boolean;
 };
 
-type ApiList = { ok: true; items: LogItem[] } | { ok: false; error: string };
+type Group = { ymd: string; items: LogItem[] };
 
 export default function LogList() {
-  const [items, setItems] = useState<LogItem[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<LogItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/logs?limit=50', { cache: 'no-store' });
-      const json: ApiList = await res.json();
-      if ('ok' in json && json.ok) setItems(json.items);
-      else setItems([]);
+      const res = await fetch('/api/logs?limit=100', {
+        cache: 'no-store',
+        credentials: 'include', // ← Cookie を必ず送る
+      });
+      const json = await res.json();
+      if (json?.ok) setItems(json.items ?? []);
+      else console.warn('load logs failed:', json?.error);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    // 初回ロード
+    load();
+  }, [load]);
 
-  const grouped = useMemo(() => {
-    const g = new Map<string, LogItem[]>();
-    (items ?? []).forEach(it => {
-      const list = g.get(it.date) ?? [];
-      list.push(it);
-      g.set(it.date, list);
-    });
-    // 日付降順、同日は id 降順
-    return Array.from(g.entries())
+  const onDelete = useCallback(async (id: number) => {
+    if (!confirm('この記録を削除しますか？')) return;
+
+    // 楽観更新：先に画面から消す
+    const prev = items;
+    setItems((cur) => cur.filter((x) => x.id !== id));
+
+    try {
+      const res = await fetch(`/api/logs/${id}`, {
+        method: 'DELETE',
+        credentials: 'include', // ← これが重要
+      });
+
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        alert(`削除に失敗しました: ${j?.error ?? res.statusText}`);
+        // 戻す
+        setItems(prev);
+        return;
+      }
+
+      // 念のためサーバー再取得で確定させる
+      await load();
+    } catch (e: any) {
+      alert(`削除に失敗しました: ${e?.message ?? e}`);
+      setItems(prev);
+    }
+  }, [items, load]);
+
+  const grouped = useMemo<Group[]>(() => {
+    const map = new Map<string, LogItem[]>();
+    for (const it of items) {
+      const ymd = it.date;
+      if (!map.has(ymd)) map.set(ymd, []);
+      map.get(ymd)!.push(it);
+    }
+    return Array.from(map.entries())
       .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-      .map(([date, rows]) => ({
-        date,
-        rows: rows.sort((x, y) => y.id - x.id),
+      .map(([ymd, arr]) => ({
+        ymd,
+        items: arr.sort((a, b) => b.id - a.id),
       }));
   }, [items]);
 
-  const doDelete = useCallback(async (id: number) => {
-    if (!confirm('この記録を削除しますか？')) return;
-    // 楽観更新
-    setItems(prev => (prev ?? []).filter(it => it.id !== id));
-
-    const res = await fetch(`/api/logs/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      // 失敗したら復元 → 再取得
-      await load();
-      const j = await res.json().catch(() => ({}));
-      alert(`削除に失敗しました: ${j?.error ?? res.statusText}`);
-      return;
-    }
-    // 念のため最新を再取得（他端末での変更等を吸収）
-    await load();
-  }, [load]);
-
-  const doEdit = useCallback(async (id: number) => {
-    const amountStr = prompt('金額（円）を入力してください:');
-    if (amountStr == null) return;
-    const amount = Number(amountStr);
-    if (!Number.isFinite(amount)) {
-      alert('数値で入力してください');
-      return;
-    }
-    const memo = prompt('メモ（空でもOK）') ?? null;
-
-    // 楽観更新
-    setItems(prev => (prev ?? []).map(it => it.id === id ? { ...it, amount, memo } : it));
-
-    const res = await fetch(`/api/logs/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, memo }),
-    });
-    if (!res.ok) {
-      await load();
-      const j = await res.json().catch(() => ({}));
-      alert(`更新に失敗しました: ${j?.error ?? res.statusText}`);
-      return;
-    }
-    await load();
-  }, [load]);
-
-  if (loading && items === null) return <p>読み込み中…</p>;
-  if ((items?.length ?? 0) === 0) return <p>まだ記録がありません。</p>;
+  if (loading) return <p>読み込み中…</p>;
+  if (!items.length) return <p>まだ記録がありません。</p>;
 
   return (
-    <section>
-      <h2 className="text-lg font-semibold mb-2">直近の記録</h2>
+    <section className="space-y-6">
+      <h2 className="text-lg font-semibold">直近の記録</h2>
       <ul className="space-y-4">
-        {grouped.map(({ date, rows }) => (
-          <li key={date}>
-            <div className="font-bold">{date}</div>
+        {grouped.map((g) => (
+          <li key={g.ymd}>
+            <div className="font-semibold">• {g.ymd}</div>
             <ul className="ml-6 list-disc">
-              {rows.map(it => (
+              {g.items.map((it) => (
                 <li key={it.id} className="my-1">
                   {it.is_income ? '収入' : '支出'}：{it.amount} 円
                   {it.memo ? `（${it.memo}）` : ''}{' '}
-                  <button onClick={() => doEdit(it.id)} className="mx-1 px-1 border rounded">編集</button>
-                  <button onClick={() => doDelete(it.id)} className="mx-1 px-1 border rounded">削除</button>
+                  <button
+                    className="mx-1 rounded border px-2 py-0.5"
+                    onClick={() => alert('編集は次のステップで復旧します')}
+                  >
+                    編集
+                  </button>
+                  <button
+                    className="mx-1 rounded border px-2 py-0.5"
+                    onClick={() => onDelete(it.id)}
+                  >
+                    削除
+                  </button>
                 </li>
               ))}
             </ul>
