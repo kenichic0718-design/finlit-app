@@ -1,17 +1,15 @@
+// app/goal/page.tsx
 import 'server-only';
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-import { Suspense } from 'react';
-import { unstable_noStore as noStore } from "next/cache";
+import { getSupabaseServer } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 import ClientBoundary from './ClientBoundary';
 
-export default function Page() {
-    noStore();
-return (
-    <Suspense fallback={null}>
-      <ClientBoundary />
-    </Suspense>
-  );
+export const dynamic = 'force-dynamic';
+
+export default async function Page() {
+  const supabase = getSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent('/goal')}`);
+  return <ClientBoundary />;
 }
+
