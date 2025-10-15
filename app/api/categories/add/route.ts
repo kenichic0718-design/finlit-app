@@ -1,54 +1,29 @@
 // app/api/categories/add/route.ts
-import { NextResponse } from "next/server";
-import { getSupabaseAdmin, envReady } from "@/lib/supabase/server";
-import { revalidatePath } from "next/cache";
+import { NextResponse } from 'next/server';
+import { getRouteClient } from '@/app/_supabase/route';
 
 export async function POST(req: Request) {
   try {
-    if (!envReady()) {
-      return NextResponse.json({ ok: false, message: "Not ready" }, { status: 500 });
+    const supabase = getRouteClient();
+    const { name, type } = await req.json().catch(() => ({} as any));
+    if (!name || typeof name !== 'string') {
+      return NextResponse.json({ ok: false, error: 'name is required' }, { status: 400 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const name = (body?.name ?? "").trim();
-    const kind = body?.kind as "expense" | "income" | undefined;
-
-    if (!name || (kind !== "expense" && kind !== "income")) {
-      return NextResponse.json(
-        { ok: false, message: "name と kind（expense|income）は必須です" },
-        { status: 400 }
-      );
+    // DB に is_income/position が無い場合も落ちないように最小カラムで insert
+    // type -> is_income へマッピング（列が無ければ無視される）
+    const toInsert: Record<string, any> = { name };
+    if (typeof type === 'string') {
+      toInsert.is_income = type === 'income';
     }
 
-    const supa = getSupabaseAdmin();
-
-    // order_index を末尾にする（kind 内の最大+1）
-    const { data: maxRows, error: maxErr } = await supa
-      .from("categories")
-      .select("order_index")
-      .eq("kind", kind)
-      .order("order_index", { ascending: false })
-      .limit(1);
-
-    if (maxErr) throw maxErr;
-    const nextOrder = (maxRows?.[0]?.order_index ?? -1) + 1;
-
-    const { data, error } = await supa
-      .from("categories")
-      .insert({ name, kind, order_index: nextOrder })
-      .select("*")
-      .single();
-
-    if (error) throw error;
-
-    revalidatePath("/log");
-    revalidatePath("/settings");
-
-    return NextResponse.json({ ok: true, item: data });
+    const { error } = await supabase.from('categories').insert([toInsert]);
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, message: e?.message ?? "サーバーエラー" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
   }
 }
+

@@ -1,66 +1,28 @@
 // app/api/categories/[id]/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { NextResponse } from 'next/server';
+import { getRouteClient } from '@/app/_supabase/route';
 
-function ok(data: any = {}) {
-  return NextResponse.json({ ok: true, ...data });
-}
-function ng(msg: string, status = 500) {
-  return NextResponse.json({ ok: false, error: msg }, { status });
-}
+type Params = { params: { id: string } };
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: Request, { params }: Params) {
   try {
-    const supabase = getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return ng("sign_in_required", 401);
-
-    const body = await req.json();
-    const name = String(body?.name || "").trim();
-    if (!name) return ng("name required", 400);
-
-    const { error } = await supabase
-      .from("categories")
-      .update({ name })
-      .match({ id: params.id, profile_id: user.id });
-
-    if (error) {
-      if (error.code === "23505") return ng("同名カテゴリが既にあります", 409);
-      return ng(error.message);
+    const supabase = getRouteClient();
+    const { id } = params;
+    const { name } = await req.json().catch(() => ({} as any));
+    if (!id) {
+      return NextResponse.json({ ok: false, error: 'id is required' }, { status: 400 });
     }
-    return ok();
-  } catch (e: any) {
-    return ng(e?.message ?? "unexpected_error");
-  }
-}
-
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const supabase = getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return ng("sign_in_required", 401);
-
-    const { error } = await supabase
-      .from("categories")
-      .delete()
-      .match({ id: params.id, profile_id: user.id });
-
-    if (error) {
-      // 参照制約 (logs/budgets) で落ちた場合
-      if (error.code === "23503") {
-        return ng("このカテゴリは使用中のため削除できません（記録や予算を先に見直してください）", 409);
-      }
-      return ng(error.message);
+    if (!name || typeof name !== 'string') {
+      return NextResponse.json({ ok: false, error: 'name is required' }, { status: 400 });
     }
-    return ok();
+
+    const { error } = await supabase.from('categories').update({ name }).eq('id', id);
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return ng(e?.message ?? "unexpected_error");
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
   }
 }
 
