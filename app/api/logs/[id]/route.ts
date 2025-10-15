@@ -1,102 +1,106 @@
 // app/api/logs/[id]/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getRouteClient } from '@/app/_supabase/route';
 
-type PatchBody = Partial<{
-  amount: number | string;
-  memo: string | null;
-  date: string;        // 'YYYY-MM-DD'
-  is_income: boolean;
-  category_id: string | null;
-}>;
+// 便利レスポンダ
+const json = (body: any, init?: number | ResponseInit) =>
+  new NextResponse(JSON.stringify(body), {
+    ...(typeof init === 'number' ? { status: init } : init),
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+  });
 
-/**
- * 共通: 現在のユーザーを取得
- */
-async function requireUser() {
+type Params = { params: { id: string } };
+
+// 共通：ユーザーとプロフィール取得
+async function getUserAndProfile() {
   const supabase = getRouteClient();
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) {
-    return { supabase, user: null as any, res: NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }) };
-  }
-  return { supabase, user: data.user, res: null as any };
+
+  const { data: u, error: uerr } = await supabase.auth.getUser();
+  if (uerr || !u?.user) return { error: json({ ok: false, error: 'Unauthorized' }, 401) };
+
+  const { data: profile, error: perr } = await supabase
+    .from('profiles')
+    .select('id,user_id')
+    .eq('user_id', u.user.id)
+    .maybeSingle();
+
+  if (perr) return { error: json({ ok: false, error: perr.message }, 500) };
+  if (!profile) return { error: json({ ok: false, error: 'Profile not found for user' }, 401) };
+
+  return { supabase, user: u.user, profile };
 }
 
-/**
- * 指定 id の log が、現在ユーザーのものかを inner join で検証して取得
- *  - logs.profile_id -> profiles.id（FK 前提）
- *  - profiles.user_id == user.id
- */
-async function getOwnedLog(supabase: ReturnType<typeof getRouteClient>, id: string, userId: string) {
-  const { data, error } = await supabase
-    .from('logs')
-    .select('id, amount, memo, date, is_income, category_id, profile_id, profiles!inner(user_id)')
-    .eq('id', id)
-    .eq('profiles.user_id', userId)
-    .single();
+// -------------------------
+// PATCH /api/logs/:id
+// -------------------------
+export async function PATCH(req: NextRequest, { params }: Params) {
+  try {
+    const id = params.id;
+    if (!id) return json({ ok: false, error: 'Missing id' }, 400);
 
-  if (error || !data) return null;
-  return data;
+    const got = await getUserAndProfile();
+    if ('error' in got) return got.error;
+    const { supabase, profile } = got;
+
+    // 受信JSON（差分のみでOK）
+    const body = await req.json().catch(() => ({}));
+
+    // 更新可能なカラムだけ許可
+    const patch: Record<string, any> = {};
+    if (body.date !== undefined) patch.date = body.date;                 // 'YYYY-MM-DD'
+    if (body.amount !== undefined) patch.amount = Number(body.amount);   // number
+    if (body.memo !== undefined) patch.memo = body.memo ?? null;         // string|null
+    if (body.is_income !== undefined) patch.is_income = !!body.is_income;// boolean
+    if (body.category_id !== undefined)
+      patch.category_id = body.category_id ?? null;                      // uuid|null
+
+    if (Object.keys(patch).length === 0) {
+      return json({ ok: false, error: 'No updatable fields' }, 400);
+    }
+
+    // 所有チェックもWhereで担保（RLSも効いて二重の安全）
+    const { data, error } = await supabase
+      .from('logs')
+      .update(patch)
+      .eq('id', id)
+      .eq('profile_id', profile.id)
+      .select('id, profile_id, date, amount, memo, is_income, category_id')
+      .maybeSingle();
+
+    if (error) return json({ ok: false, error: error.message }, 500);
+    if (!data) return json({ ok: false, error: 'Not found or not owned' }, 404);
+
+    return json({ ok: true, item: data }, 200);
+  } catch (e: any) {
+    return json({ ok: false, error: e?.message ?? 'Unexpected error' }, 500);
+  }
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
-  const { supabase, user, res } = await requireUser();
-  if (!user) return res;
+// 既に実装済みならこのDELETEはそのままでOKですが、参考として残します。
+// DELETE /api/logs/:id
+export async function DELETE(_req: NextRequest, { params }: Params) {
+  try {
+    const id = params.id;
+    if (!id) return json({ ok: false, error: 'Missing id' }, 400);
 
-  // 所有チェック
-  const owned = await getOwnedLog(supabase, params.id, user.id);
-  if (!owned) {
-    return NextResponse.json({ ok: false, error: 'Not found or not owned' }, { status: 404 });
+    const got = await getUserAndProfile();
+    if ('error' in got) return got.error;
+    const { supabase, profile } = got;
+
+    const { data, error } = await supabase
+      .from('logs')
+      .delete()
+      .eq('id', id)
+      .eq('profile_id', profile.id)
+      .select('id')
+      .maybeSingle();
+
+    if (error) return json({ ok: false, error: error.message }, 500);
+    if (!data) return json({ ok: false, error: 'Not found or not owned' }, 404);
+
+    return json({ ok: true, deleted: 1 });
+  } catch (e: any) {
+    return json({ ok: false, error: e?.message ?? 'Unexpected error' }, 500);
   }
-
-  const { error: delErr } = await supabase.from('logs').delete().eq('id', params.id);
-  if (delErr) {
-    return NextResponse.json({ ok: false, error: delErr.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, deleted: 1 });
-}
-
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const { supabase, user, res } = await requireUser();
-  if (!user) return res;
-
-  // 所有チェック
-  const owned = await getOwnedLog(supabase, params.id, user.id);
-  if (!owned) {
-    return NextResponse.json({ ok: false, error: 'Not found or not owned' }, { status: 404 });
-  }
-
-  const body: PatchBody = await req.json();
-
-  // 受け付けるフィールドだけ反映（最小限）
-  const update: Record<string, any> = {};
-  if (body.amount !== undefined) update.amount = Number(body.amount);
-  if (body.memo !== undefined) update.memo = body.memo ?? null;
-  if (body.date !== undefined) update.date = body.date; // 形式は UI 側で 'YYYY-MM-DD'
-  if (body.is_income !== undefined) update.is_income = !!body.is_income;
-  if (body.category_id !== undefined) update.category_id = body.category_id;
-
-  if (Object.keys(update).length === 0) {
-    return NextResponse.json({ ok: false, error: 'No valid fields' }, { status: 400 });
-  }
-
-  const { error: upErr } = await supabase.from('logs').update(update).eq('id', params.id);
-  if (upErr) {
-    return NextResponse.json({ ok: false, error: upErr.message }, { status: 500 });
-  }
-
-  // 更新後の 1 行を返す（UI の即時反映用）
-  const { data: updated, error: selErr } = await supabase
-    .from('logs')
-    .select('id, amount, memo, date, is_income, category_id')
-    .eq('id', params.id)
-    .single();
-
-  if (selErr || !updated) {
-    return NextResponse.json({ ok: true, updated: 1 }); // 最悪でも OK を返す
-  }
-
-  return NextResponse.json({ ok: true, item: updated });
 }
 
