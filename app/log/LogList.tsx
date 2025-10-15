@@ -12,19 +12,24 @@ type LogItem = {
 
 export default function LogList() {
   const [items, setItems] = useState<LogItem[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function load() {
+    setLoading(true);
     try {
-      setLoading(true);
-      setErr(null);
-      const res = await fetch('/api/logs?limit=50', { cache: 'no-store' });
+      // エッジキャッシュを避けるためにタイムスタンプを付与
+      const res = await fetch(`/api/logs?limit=20&t=${Date.now()}`, {
+        // ブラウザの Cookie を使うため include
+        credentials: 'include',
+        cache: 'no-store',
+      });
       const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'failed to load');
+      if (!res.ok || !json.ok) throw new Error(json.error || 'failed');
       setItems(json.items as LogItem[]);
-    } catch (e: any) {
-      setErr(e.message ?? String(e));
+    } catch (e) {
+      console.error(e);
+      alert('記録の取得に失敗しました。');
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -34,58 +39,52 @@ export default function LogList() {
     load();
   }, []);
 
-  async function onDelete(id: number) {
+  async function handleDelete(id: number) {
     if (!confirm('この記録を削除しますか？')) return;
-    const res = await fetch(`/api/logs/${id}`, { method: 'DELETE' });
-    const json = await res.json();
-    if (!json.ok) {
-      alert('削除に失敗しました: ' + (json.error ?? 'unknown'));
-      return;
+
+    // 楽観的更新：先に画面から消す（失敗時は戻す）
+    const prev = items ?? [];
+    setItems(prev.filter((x) => x.id !== id));
+
+    try {
+      const res = await fetch(`/api/logs/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || 'delete failed');
+      }
+      // 念のため再取得（不整合を避ける）
+      await load();
+    } catch (e) {
+      console.error(e);
+      alert('削除に失敗しました。再読み込みしてもう一度お試しください。');
+      // ロールバック
+      setItems(prev);
     }
-    await load();
   }
-
-  async function onEdit(id: number, current: LogItem) {
-    const amountStr = prompt('金額を入力してください', String(current.amount));
-    if (amountStr == null) return;
-    const amount = Number(amountStr);
-    if (!Number.isFinite(amount) || amount < 0) {
-      alert('金額が不正です');
-      return;
-    }
-    const memo = prompt('メモ（空でもOK）', current.memo ?? '') ?? current.memo ?? '';
-
-    const res = await fetch(`/api/logs/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, memo }),
-    });
-    const json = await res.json();
-    if (!json.ok) {
-      alert('更新に失敗しました: ' + (json.error ?? 'unknown'));
-      return;
-    }
-    await load();
-  }
-
-  if (loading) return <p>読み込み中...</p>;
-  if (err) return <p style={{ color: 'crimson' }}>エラー: {err}</p>;
-  if (!items || items.length === 0) return <p>まだ記録がありません。</p>;
 
   return (
-    <section className="space-y-4">
-      <h2 className="text-lg font-semibold">直近の記録</h2>
+    <section>
+      <h2 className="text-lg font-bold mb-3">直近の記録</h2>
+      {loading && <p>読み込み中...</p>}
+      {!loading && (!items || items.length === 0) && <p>まだ記録がありません。</p>}
       <ul className="space-y-2">
-        {items.map((x) => (
-          <li key={x.id} className="flex items-center gap-3">
-            <span className="shrink-0 w-28 text-gray-600">{x.date}</span>
-            <span className="shrink-0">{x.is_income ? '収入' : '支出'}：</span>
-            <span className="shrink-0">{x.amount} 円</span>
-            {x.memo ? <span className="text-gray-500">（{x.memo}）</span> : null}
-            <button className="ml-2 px-2 py-0.5 border rounded" onClick={() => onEdit(x.id, x)}>
+        {items?.map((it) => (
+          <li key={it.id}>
+            {it.date} {it.is_income ? '収入' : '支出'}：{it.amount} 円
+            {it.memo ? `（${it.memo}）` : ''}{' '}
+            <button
+              className="px-2 py-0.5 text-sm border rounded mr-1"
+              onClick={() => alert('編集は後で復活させます！')}
+            >
               編集
             </button>
-            <button className="px-2 py-0.5 border rounded" onClick={() => onDelete(x.id)}>
+            <button
+              className="px-2 py-0.5 text-sm border rounded"
+              onClick={() => handleDelete(it.id)}
+            >
               削除
             </button>
           </li>
