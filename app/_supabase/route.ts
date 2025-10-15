@@ -1,15 +1,10 @@
 // app/_supabase/route.ts
-import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-/**
- * Route Handler 専用のSupabaseクライアント
- * Next.jsの cookies() を get/set/remove ラッパで渡す（公式推奨）
- */
-export function getRouteClient() {
+export function getRouteSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   const store = cookies();
 
   return createServerClient(url, anon, {
@@ -17,11 +12,11 @@ export function getRouteClient() {
       get(name: string) {
         return store.get(name)?.value;
       },
-      set(name: string, value: string, options?: Parameters<typeof store.set>[1]) {
-        store.set(name, value, options);
+      set(name: string, value: string, opts: { path?: string; maxAge?: number; domain?: string; sameSite?: 'lax'|'strict'|'none'; secure?: boolean; httpOnly?: boolean }) {
+        store.set({ name, value, ...opts });
       },
-      remove(name: string, options?: Parameters<typeof store.set>[1]) {
-        store.set(name, '', { ...options, maxAge: 0 });
+      remove(name: string, opts?: { path?: string; domain?: string }) {
+        store.delete({ name, ...opts });
       },
     },
   });
