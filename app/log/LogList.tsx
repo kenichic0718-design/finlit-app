@@ -1,149 +1,58 @@
-'use client';
+// app/log/LogList.tsx
+import 'server-only';
+import { getSupabaseServer } from '@/lib/supabase/server';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
-type LogItem = {
+type Row = {
   id: number;
-  date: string;
+  date: string | null;
   amount: number;
-  memo: string | null;
-  is_income: boolean;
+  is_income: boolean | null;
   category: string | null;
-  category_id: number | null;
+  created_at: string;
 };
 
-type GetResp = { ok: boolean; items?: LogItem[]; error?: string };
+export default async function LogList() {
+  const supabase = getSupabaseServer();
 
-export default function LogList() {
-  const [items, setItems] = useState<LogItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<{ amount: string; memo: string }>({ amount: '', memo: '' });
-  const [msg, setMsg] = useState<string>('');
+  // 現在ログイン中ユーザーを取得
+  const { data: auth } = await supabase.auth.getUser();
+  const user = auth?.user;
+  if (!user) {
+    return <p>ログインしていません。</p>;
+  }
 
-  const fetchList = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await fetch('/api/logs?limit=20', { cache: 'no-store' });
-      const j: GetResp = await r.json();
-      if (j.ok && j.items) setItems(j.items);
-      else setMsg(j.error ?? '読み込みに失敗しました');
-    } catch {
-      setMsg('読み込みに失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // 直近の記録10件をサーバ直クエリで取得（セッションはサーバ側で保持される）
+  const { data, error } = await supabase
+    .from('logs')
+    .select('id,date,amount,is_income,category,created_at')
+    .eq('profile_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(10);
 
-  useEffect(() => { fetchList(); }, [fetchList]);
-
-  const startEdit = (row: LogItem) => {
-    setEditingId(row.id);
-    setForm({ amount: String(row.amount), memo: row.memo ?? '' });
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setForm({ amount: '', memo: '' });
-  };
-
-  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setForm((s) => ({ ...s, [name]: value }));
-  };
-
-  const onSave = async (id: number) => {
-    setMsg('');
-    const amountNum = Number(form.amount);
-    if (!Number.isFinite(amountNum)) {
-      setMsg('金額は数値で入力してください');
-      return;
-    }
-    try {
-      const r = await fetch(`/api/logs/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: amountNum, memo: form.memo }),
-      });
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error || '更新に失敗しました');
-      cancelEdit();
-      await fetchList();
-      setMsg('更新しました！');
-    } catch (e: any) {
-      setMsg(e.message || '更新に失敗しました');
-    }
-  };
-
-  const onDelete = async (id: number) => {
-    if (!confirm('この記録を削除しますか？')) return;
-    setMsg('');
-    try {
-      const r = await fetch(`/api/logs/${id}`, { method: 'DELETE' });
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error || '削除に失敗しました');
-      await fetchList();
-      setMsg('削除しました！');
-    } catch (e: any) {
-      setMsg(e.message || '削除に失敗しました');
-    }
-  };
-
-  const rows = useMemo(() => items, [items]);
+  if (error) {
+    return <p>読み込みに失敗しました：{error.message}</p>;
+  }
+  if (!data || data.length === 0) {
+    return <p>まだ記録がありません。</p>;
+  }
 
   return (
-    <div className="mt-10 space-y-3">
-      <h2 className="text-lg font-semibold">直近の記録</h2>
-      {loading && <p>読み込み中…</p>}
-      {msg && <p className="text-sm opacity-80">{msg}</p>}
-      {rows.length === 0 && !loading && <p>まだ記録がありません。</p>}
+    <section>
+      <h2 className="text-lg font-semibold mb-3">直近の記録</h2>
       <ul className="space-y-2">
-        {rows.map((row) => (
-          <li key={row.id} className="border rounded p-3">
-            {editingId === row.id ? (
-              <div className="space-y-2">
-                <div className="text-sm opacity-80">日付: {row.date} / {row.is_income ? '収入' : '支出'}</div>
-                <label className="block">
-                  <span className="text-sm">金額</span>
-                  <input
-                    name="amount"
-                    value={form.amount}
-                    onChange={onChange}
-                    className="border rounded px-2 py-1 w-32 ml-2"
-                    inputMode="decimal"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm">メモ</span>
-                  <input
-                    name="memo"
-                    value={form.memo}
-                    onChange={onChange}
-                    className="border rounded px-2 py-1 ml-2 w-72"
-                  />
-                </label>
-                <div className="space-x-2">
-                  <button onClick={() => onSave(row.id)} className="border rounded px-3 py-1">保存</button>
-                  <button onClick={cancelEdit} className="border rounded px-3 py-1">キャンセル</button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium">{row.is_income ? '収入' : '支出'} / {row.amount} 円</div>
-                  <div className="text-sm opacity-80">
-                    {row.date} / カテゴリ: {row.category ?? '（なし）'} {row.memo ? ` / メモ: ${row.memo}` : ''}
-                  </div>
-                </div>
-                <div className="space-x-2">
-                  <button onClick={() => startEdit(row)} className="border rounded px-3 py-1">編集</button>
-                  <button onClick={() => onDelete(row.id)} className="border rounded px-3 py-1">削除</button>
-                </div>
-              </div>
-            )}
+        {data.map((r: Row) => (
+          <li key={r.id} className="border rounded p-2">
+            <div className="text-sm opacity-70">
+              {r.date ?? new Date(r.created_at).toLocaleDateString('ja-JP')}
+            </div>
+            <div className="font-medium">
+              {r.is_income ? '収入' : '支出'}：{Math.round(r.amount)} 円
+              {r.category ? `（${r.category}）` : ''}
+            </div>
           </li>
         ))}
       </ul>
-    </div>
+    </section>
   );
 }
+
