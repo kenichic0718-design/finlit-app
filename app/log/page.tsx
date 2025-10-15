@@ -1,15 +1,13 @@
-// app/log/page.tsx
 import 'server-only';
-import { getSupabaseServer } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import ClientBoundary from './ClientBoundary';
+import LogList from './LogList';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Page() {
-  const supabase = getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect(`/login?next=${encodeURIComponent('/log')}`);
-  return <ClientBoundary />;
+export default function LogPage() {
+  return (
+    <main className="container mx-auto px-4 py-8">
+      <h1 className="text-xl font-bold mb-4">記録</h1>
+      <LogList />
+    </main>
+  );
 }
-
