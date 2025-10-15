@@ -1,15 +1,21 @@
 // app/categories/page.tsx
 import 'server-only';
-import { getSupabaseServer } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import ClientBoundary from './ClientBoundary';
+import dynamic from 'next/dynamic';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Page() {
-  const supabase = getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect(`/login?next=${encodeURIComponent('/categories')}`);
-  return <ClientBoundary />;
+// 遅延読み込み：初期HTMLは軽く、クライアントのみで動く箇所を分離
+const CategoryManagerClient = dynamic(
+  () => import('./CategoryManagerClient'),
+  { ssr: false }
+);
+
+export default function CategoriesPage() {
+  return (
+    <main className="container mx-auto px-4 py-8">
+      <h1 className="text-xl font-bold mb-6">カテゴリ管理</h1>
+      <CategoryManagerClient />
+    </main>
+  );
 }
 
