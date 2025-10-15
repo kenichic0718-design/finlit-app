@@ -1,14 +1,8 @@
 // app/categories/page.tsx
 import 'server-only';
-import NextDynamic from 'next/dynamic';  // ← 別名にして衝突回避
+import CategoryManagerClient from './CategoryManagerClient'; // ← 普通に直import
 
 export const dynamic = 'force-dynamic';
-
-// 遅延読み込み：初期HTMLは軽く、クライアントのみで動く箇所を分離
-const CategoryManagerClient = NextDynamic(
-  () => import('./CategoryManagerClient'),
-  { ssr: false }
-);
 
 export default function CategoriesPage() {
   return (
