@@ -1,95 +1,102 @@
 // app/api/logs/[id]/route.ts
-import { NextResponse, NextRequest } from 'next/server';
-import { getRouteSupabase } from '@/app/_supabase/route';
+import { NextResponse } from 'next/server';
+import { getRouteClient } from '@/app/_supabase/route';
 
-// 共通: セッション & プロフィールを取る
-async function getAuthedProfile(supabase: ReturnType<typeof getRouteSupabase>) {
-  const { data: { session }, error: sErr } = await supabase.auth.getSession();
-  if (sErr) return { status: 500, json: { ok: false, error: sErr.message } as const };
-  if (!session) return { status: 401, json: { ok: false, error: 'Unauthorized' } as const };
+type PatchBody = Partial<{
+  amount: number | string;
+  memo: string | null;
+  date: string;        // 'YYYY-MM-DD'
+  is_income: boolean;
+  category_id: string | null;
+}>;
 
-  const { data: profile, error: pErr } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('user_id', session.user.id)
-    .single();
-
-  if (pErr || !profile) {
-    return { status: 401, json: { ok: false, error: 'Profile not found for user' } as const };
+/**
+ * 共通: 現在のユーザーを取得
+ */
+async function requireUser() {
+  const supabase = getRouteClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user) {
+    return { supabase, user: null as any, res: NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }) };
   }
-  return { status: 200, profile };
+  return { supabase, user: data.user, res: null as any };
 }
 
-// ログの所有チェック
-async function assertOwnLog(supabase: ReturnType<typeof getRouteSupabase>, id: string, profileId: string) {
-  const { data: row, error } = await supabase
+/**
+ * 指定 id の log が、現在ユーザーのものかを inner join で検証して取得
+ *  - logs.profile_id -> profiles.id（FK 前提）
+ *  - profiles.user_id == user.id
+ */
+async function getOwnedLog(supabase: ReturnType<typeof getRouteClient>, id: string, userId: string) {
+  const { data, error } = await supabase
     .from('logs')
-    .select('id, profile_id')
+    .select('id, amount, memo, date, is_income, category_id, profile_id, profiles!inner(user_id)')
     .eq('id', id)
+    .eq('profiles.user_id', userId)
     .single();
 
-  if (error) return { status: 404, json: { ok: false, error: 'Not found' } as const };
-  if (!row || row.profile_id !== profileId) {
-    return { status: 404, json: { ok: false, error: 'Not found or not owned' } as const };
-  }
-  return { status: 200 };
+  if (error || !data) return null;
+  return data;
 }
 
-// PATCH /api/logs/:id  — 部分更新（amount, memo, date, is_income, category_id を許可）
-export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
-  const { id } = ctx.params;
-  const supabase = getRouteSupabase(req);
+export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+  const { supabase, user, res } = await requireUser();
+  if (!user) return res;
 
-  const prof = await getAuthedProfile(supabase);
-  if ('json' in prof) return NextResponse.json(prof.json, { status: prof.status });
-
-  const own = await assertOwnLog(supabase, id, prof.profile.id);
-  if ('json' in own) return NextResponse.json(own.json, { status: own.status });
-
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 });
+  // 所有チェック
+  const owned = await getOwnedLog(supabase, params.id, user.id);
+  if (!owned) {
+    return NextResponse.json({ ok: false, error: 'Not found or not owned' }, { status: 404 });
   }
 
-  // 受け付けるキーだけ通す（不要キーは落とす）
-  const allowedKeys = ['amount', 'memo', 'date', 'is_income', 'category_id'] as const;
-  const update: Record<string, unknown> = {};
-  for (const k of allowedKeys) {
-    if (k in body) update[k] = body[k];
+  const { error: delErr } = await supabase.from('logs').delete().eq('id', params.id);
+  if (delErr) {
+    return NextResponse.json({ ok: false, error: delErr.message }, { status: 500 });
   }
+
+  return NextResponse.json({ ok: true, deleted: 1 });
+}
+
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const { supabase, user, res } = await requireUser();
+  if (!user) return res;
+
+  // 所有チェック
+  const owned = await getOwnedLog(supabase, params.id, user.id);
+  if (!owned) {
+    return NextResponse.json({ ok: false, error: 'Not found or not owned' }, { status: 404 });
+  }
+
+  const body: PatchBody = await req.json();
+
+  // 受け付けるフィールドだけ反映（最小限）
+  const update: Record<string, any> = {};
+  if (body.amount !== undefined) update.amount = Number(body.amount);
+  if (body.memo !== undefined) update.memo = body.memo ?? null;
+  if (body.date !== undefined) update.date = body.date; // 形式は UI 側で 'YYYY-MM-DD'
+  if (body.is_income !== undefined) update.is_income = !!body.is_income;
+  if (body.category_id !== undefined) update.category_id = body.category_id;
+
   if (Object.keys(update).length === 0) {
-    return NextResponse.json({ ok: false, error: 'No updatable fields' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'No valid fields' }, { status: 400 });
   }
 
-  const { data: updated, error: uErr } = await supabase
+  const { error: upErr } = await supabase.from('logs').update(update).eq('id', params.id);
+  if (upErr) {
+    return NextResponse.json({ ok: false, error: upErr.message }, { status: 500 });
+  }
+
+  // 更新後の 1 行を返す（UI の即時反映用）
+  const { data: updated, error: selErr } = await supabase
     .from('logs')
-    .update(update)
-    .eq('id', id)
-    .select('*')
+    .select('id, amount, memo, date, is_income, category_id')
+    .eq('id', params.id)
     .single();
 
-  if (uErr) {
-    return NextResponse.json({ ok: false, error: uErr.message }, { status: 400 });
+  if (selErr || !updated) {
+    return NextResponse.json({ ok: true, updated: 1 }); // 最悪でも OK を返す
   }
-  return NextResponse.json({ ok: true, item: updated }, { status: 200 });
-}
 
-// DELETE /api/logs/:id  — 既存の削除が動いていればそのままでOK。念のため置いておきます。
-export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) {
-  const { id } = ctx.params;
-  const supabase = getRouteSupabase(req);
-
-  const prof = await getAuthedProfile(supabase);
-  if ('json' in prof) return NextResponse.json(prof.json, { status: prof.status });
-
-  const own = await assertOwnLog(supabase, id, prof.profile.id);
-  if ('json' in own) return NextResponse.json(own.json, { status: own.status });
-
-  const { error, count } = await supabase.from('logs').delete({ count: 'exact' }).eq('id', id);
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-
-  return NextResponse.json({ ok: true, deleted: count ?? 0 }, { status: 200 });
+  return NextResponse.json({ ok: true, item: updated });
 }
 
