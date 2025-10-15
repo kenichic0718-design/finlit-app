@@ -1,21 +1,29 @@
 // app/_supabase/route.ts
-import { NextResponse } from 'next/server';
-import { getSupabaseServer } from '@/lib/supabase/server';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
-export async function GET() {
-  try {
-    const supabase = getSupabaseServer();
-    const [sess, prof] = await Promise.all([
-      supabase.auth.getSession(),
-      supabase.from('profile').select('*').limit(1),
-    ]);
-    return NextResponse.json({
-      ok: true,
-      session: sess.data.session ? { user: sess.data.session.user } : null,
-      profileCount: prof.data?.length ?? 0,
-    });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
-  }
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+/**
+ * Route Handler 専用のSupabaseクライアント
+ * Next.jsの cookies() を get/set/remove ラッパで渡す（公式推奨）
+ */
+export function getRouteClient() {
+  const store = cookies();
+
+  return createServerClient(url, anon, {
+    cookies: {
+      get(name: string) {
+        return store.get(name)?.value;
+      },
+      set(name: string, value: string, options?: Parameters<typeof store.set>[1]) {
+        store.set(name, value, options);
+      },
+      remove(name: string, options?: Parameters<typeof store.set>[1]) {
+        store.set(name, '', { ...options, maxAge: 0 });
+      },
+    },
+  });
 }
 
