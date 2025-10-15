@@ -5,7 +5,7 @@ import { getRouteClient } from '@/app/_supabase/route';
 type RowLoose = {
   id: string;
   name: string;
-  is_income?: boolean | null; // 無い環境もある想定
+  is_income?: boolean | null;
   position?: number | null;
 };
 
@@ -14,33 +14,37 @@ export async function GET() {
     const supabase = getRouteClient();
     const from = supabase.from('categories');
 
-    // まずフル項目で挑戦
-    let { data, error } = await from
-      .select('id,name,is_income,position')
-      .order('position', { ascending: true });
+    // 1st: 全部（position あり想定）
+    let data: RowLoose[] | null = null;
 
-    // 列が無くて失敗したら最小構成で再取得
-    if (error) {
-      const retry = await from.select('id,name');
-      if (retry.error) {
-        return NextResponse.json(
-          { ok: false, error: retry.error.message },
-          { status: 500 }
-        );
+    // 1) id,name,is_income,position
+    {
+      const { data: d1, error: e1 } = await from.select('id,name,is_income,position');
+      if (!e1) data = d1 as RowLoose[]; else {
+        // 2) id,name,is_income
+        const { data: d2, error: e2 } = await from.select('id,name,is_income');
+        if (!e2) data = d2 as RowLoose[]; else {
+          // 3) id,name
+          const { data: d3, error: e3 } = await from.select('id,name');
+          if (e3) {
+            return NextResponse.json({ ok: false, error: e3.message }, { status: 500 });
+          }
+          data = d3 as RowLoose[];
+        }
       }
-      data = retry.data as RowLoose[] | null;
     }
 
-    const rows = (data ?? []) as RowLoose[];
+    const rows = data ?? [];
 
-    // UI が期待する形に正規化
+    // UI が期待する形に正規化（position 無ければ 0）
     const items = rows
-      .map((r) => ({
+      .map(r => ({
         id: r.id,
         name: r.name,
         type: r.is_income ? ('income' as const) : ('expense' as const),
         position: r.position ?? 0,
       }))
+      // position が無くても安全にソート
       .sort((a, b) => {
         if (a.type !== b.type) return a.type < b.type ? -1 : 1;
         if (a.position !== b.position) return a.position - b.position;
@@ -49,10 +53,7 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, items });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: String(e?.message ?? e) },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
   }
 }
 
