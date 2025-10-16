@@ -1,98 +1,139 @@
 // app/api/logs/[id]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getRouteClient } from "@/lib/supabase/server";
 
-// 共通: 失敗レスポンス
-function jerr(error: string, status = 500) {
-  return NextResponse.json({ ok: false, error }, { status });
+/**
+ * 共通: 認証 & プロフィール取得
+ */
+async function getAuthedProfileId() {
+  const supabase = getRouteClient();
+
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser();
+
+  if (authErr) {
+    return { error: `Auth error: ${authErr.message}` as const, status: 401 };
+  }
+  if (!user) {
+    return { error: "Unauthorized" as const, status: 401 };
+  }
+
+  const { data: profile, error: pErr } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (pErr || !profile) {
+    return { error: "Profile not found for user" as const, status: 401 };
+  }
+
+  return { profileId: profile.id as string, supabase };
 }
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+/**
+ * PATCH /api/logs/:id
+ * body: { amount?: number, memo?: string, date?: string(YYYY-MM-DD), is_income?: boolean }
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const supabase = getRouteClient();
+    const auth = await getAuthedProfileId();
+    if ("error" in auth) {
+      return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+    }
+    const { supabase, profileId } = auth;
+
     const id = Number(params.id);
-
-    // 認証
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-    if (authErr || !user) return jerr("Unauthorized", 401);
-
-    // ユーザー→profile ひも付け
-    const { data: profile, error: profErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (profErr || !profile) return jerr("Profile not found for user", 401);
-
-    // 入力
-    const body = await req.json().catch(() => ({} as any));
-    const patch: any = {};
-    if (typeof body.amount === "number") patch.amount = body.amount;
-    if (typeof body.memo === "string") patch.memo = body.memo;
-    if (typeof body.is_income === "boolean") patch.is_income = body.is_income;
-    if (typeof body.date === "string") patch.date = body.date; // "YYYY-MM-DD"
-
-    if (Object.keys(patch).length === 0) {
-      return jerr("No updatable fields", 400);
+    if (!Number.isFinite(id)) {
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
-    // 所有者制約つき更新（見つからなければ 404）
+    const payload = await req.json().catch(() => ({} as any));
+
+    const updates: Record<string, unknown> = {};
+    if (payload.amount !== undefined) updates.amount = Number(payload.amount);
+    if (payload.memo !== undefined) updates.memo = String(payload.memo);
+    if (payload.date !== undefined) updates.date = String(payload.date);
+    if (payload.is_income !== undefined) updates.is_income = !!payload.is_income;
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ ok: false, error: "No fields to update" }, { status: 400 });
+    }
+
+    // 所有チェック（profile_id一致）も条件に含める
     const { data, error } = await supabase
       .from("logs")
-      .update(patch)
+      .update(updates)
       .eq("id", id)
-      .eq("profile_id", profile.id)
-      .select()
+      .eq("profile_id", profileId)
+      .select("id, profile_id, date, amount, memo, is_income")
       .single();
 
     if (error) {
-      // 見つからない系
-      if ((error as any).code === "PGRST116") {
-        return jerr("Not found or not owned", 404);
-      }
-      return jerr(error.message ?? "Update failed", 500);
+      // PGRST116 は該当行なし
+      const status = (error as any)?.code === "PGRST116" ? 404 : 500;
+      return NextResponse.json({ ok: false, error: error.message }, { status });
+    }
+    if (!data) {
+      return NextResponse.json({ ok: false, error: "Not found or not owned" }, { status: 404 });
     }
 
     return NextResponse.json({ ok: true, item: data });
   } catch (e: any) {
-    return jerr(e?.message ?? "Unexpected error", 500);
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "Unexpected error" },
+      { status: 500 }
+    );
   }
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+/**
+ * DELETE /api/logs/:id
+ */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const supabase = getRouteClient();
+    const auth = await getAuthedProfileId();
+    if ("error" in auth) {
+      return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+    }
+    const { supabase, profileId } = auth;
+
     const id = Number(params.id);
+    if (!Number.isFinite(id)) {
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return jerr("Unauthorized", 401);
-
-    const { data: profile } = await supabase
-      .from("profiles")
+    const { data, error } = await supabase
+      .from("logs")
+      .delete()
+      .eq("id", id)
+      .eq("profile_id", profileId)
       .select("id")
-      .eq("user_id", user.id)
       .single();
 
-    if (!profile) return jerr("Profile not found for user", 401);
+    if (error) {
+      const status = (error as any)?.code === "PGRST116" ? 404 : 500;
+      return NextResponse.json({ ok: false, error: error.message }, { status });
+    }
 
-    const { error, count } = await supabase
-      .from("logs")
-      .delete({ count: "exact" })
-      .eq("id", id)
-      .eq("profile_id", profile.id);
+    if (!data) {
+      return NextResponse.json({ ok: false, error: "Not found or not owned" }, { status: 404 });
+    }
 
-    if (error) return jerr(error.message ?? "Delete failed", 500);
-    if (!count) return jerr("Not found or not owned", 404);
-
-    return NextResponse.json({ ok: true, deleted: count });
+    return NextResponse.json({ ok: true, deleted: 1, id: data.id });
   } catch (e: any) {
-    return jerr(e?.message ?? "Unexpected error", 500);
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "Unexpected error" },
+      { status: 500 }
+    );
   }
 }
 

@@ -1,175 +1,114 @@
 // app/log/LogList.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-type LogRow = {
+type LogItem = {
   id: number;
   profile_id: string;
-  date: string; // "YYYY-MM-DD"
+  date: string; // YYYY-MM-DD
   amount: number;
   memo: string | null;
   is_income: boolean;
 };
 
-type Groups = Map<string, LogRow[]>;
-
-function ymd(date: string) {
-  // 既に YYYY-MM-DD 形式で来る想定だが保険
-  return date.length >= 10 ? date.slice(0, 10) : date;
-}
+type ApiList = { ok: true; items: LogItem[] } | { ok: false; error: string };
+type ApiResult<T> = { ok: true; item: T } | { ok: false; error: string };
 
 export default function LogList() {
-  const [groups, setGroups] = useState<Groups>(new Map());
-  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<LogItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
+
+  // 編集フォームの局所状態
   const [editDate, setEditDate] = useState("");
   const [editAmount, setEditAmount] = useState<number>(0);
-  const [editMemo, setEditMemo] = useState<string>("");
-  const [editIncome, setEditIncome] = useState<boolean>(false);
+  const [editMemo, setEditMemo] = useState("");
+  const [editIncome, setEditIncome] = useState(false);
 
-  const flat = useMemo(
-    () => Array.from(groups.values()).flatMap((arr) => arr),
-    [groups]
-  );
+  const grouped = useMemo(() => {
+    const map = new Map<string, LogItem[]>();
+    for (const it of items) {
+      const k = it.date;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(it);
+    }
+    // 日付降順
+    return Array.from(map.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([date, rows]) => [date, rows.sort((x, y) => x.id - y.id)] as const);
+  }, [items]);
 
-  async function load() {
+  const fetchList = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/logs?limit=200", { cache: "no-store" });
-      const raw = await res.text(); // 空ボディ保険
-      if (!raw) throw new Error("Empty response");
-      const data = JSON.parse(raw);
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "fetch failed");
-
-      const items: LogRow[] = data.items ?? [];
-      // 日付降順→id降順ぐらいで軽く並べる
-      items.sort((a, b) => {
-        const d = ymd(b.date).localeCompare(ymd(a.date));
-        if (d) return d;
-        return b.id - a.id;
-      });
-
-      const g = new Map<string, LogRow[]>();
-      for (const row of items) {
-        const key = ymd(row.date);
-        if (!g.has(key)) g.set(key, []);
-        g.get(key)!.push(row);
-      }
-      setGroups(g);
-    } catch (e) {
-      console.error(e);
-      alert("カテゴリの取得に失敗しました。");
+      const json: ApiList = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      setItems(json.items);
+    } catch (e: any) {
+      alert(`カテゴリの取得に失敗しました: ${e?.message ?? e}`);
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    load();
   }, []);
 
-  function beginEdit(row: LogRow) {
-    setEditingId(row.id);
-    setEditDate(ymd(row.date));
-    setEditAmount(row.is_income ? -row.amount : row.amount); // 画面は支出+／収入- ではなく単純額で扱うなら調整不要。ここは元UI踏襲せず正値に。
-    setEditMemo(row.memo ?? "");
-    setEditIncome(row.is_income);
-  }
+  useEffect(() => {
+    fetchList();
+  }, [fetchList]);
 
-  function cancelEdit() {
+  const onClickEdit = (it: LogItem) => {
+    setEditingId(it.id);
+    setEditDate(it.date);
+    setEditAmount(it.amount);
+    setEditMemo(it.memo ?? "");
+    setEditIncome(!!it.is_income);
+  };
+
+  const onCancelEdit = () => {
     setEditingId(null);
-  }
+  };
 
-  async function saveEdit(id: number) {
-    const payload: Partial<LogRow> & { date?: string } = {
-      amount: Number(editAmount),
-      memo: editMemo ?? "",
-      is_income: !!editIncome,
-      date: editDate,
-    };
+  const onDelete = async (id: number) => {
+    if (!confirm("削除しますか？")) return;
     try {
+      const res = await fetch(`/api/logs/${id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error ?? "Delete failed");
+      setItems((prev) => prev.filter((x) => x.id !== id));
+    } catch (e: any) {
+      alert(`削除に失敗しました: ${e?.message ?? e}`);
+    }
+  };
+
+  const onSave = async (id: number) => {
+    try {
+      const payload = {
+        date: editDate,
+        amount: Number(editAmount),
+        memo: editMemo || null,
+        is_income: !!editIncome,
+      };
+
       const res = await fetch(`/api/logs/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      // 空ボディでも落ちないように
-      const raw = await res.text();
-      const data = raw ? JSON.parse(raw) : null;
+      // ここはサーバーが必ず JSON を返す前提に修正済み
+      const json: ApiResult<LogItem> = await res.json();
 
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || res.statusText);
-      }
+      if (!json.ok) throw new Error(json.error ?? "Update failed");
 
-      // 返ってきた最新行で UI を差し替え
-      const updated: LogRow = data.item;
-      setGroups((prev) => {
-        const copy = new Map(prev);
-
-        // 1) 既存グループから古い行を除去
-        for (const [k, arr] of copy.entries()) {
-          const idx = arr.findIndex((r) => r.id === id);
-          if (idx >= 0) {
-            const newArr = [...arr];
-            newArr.splice(idx, 1);
-            copy.set(k, newArr);
-            if (newArr.length === 0) copy.delete(k);
-            break;
-          }
-        }
-
-        // 2) 新しい日付のグループに挿入
-        const key = ymd(updated.date);
-        const arr = copy.get(key) ?? [];
-        // 日付グループ内は id 降順の軽い規則
-        const newArr = [...arr, updated].sort((a, b) => b.id - a.id);
-        copy.set(key, newArr);
-        return copy;
-      });
-
+      setItems((prev) => prev.map((x) => (x.id === id ? json.item : x)));
       setEditingId(null);
-      alert("更新しました。");
     } catch (e: any) {
-      console.error(e);
-      alert(`更新に失敗しました: ${e.message || e}`);
+      alert(`更新に失敗しました: ${e?.message ?? e}`);
     }
-  }
+  };
 
-  async function remove(id: number) {
-    if (!confirm("削除しますか？")) return;
-    try {
-      const res = await fetch(`/api/logs/${id}`, { method: "DELETE" });
-      const raw = await res.text();
-      const data = raw ? JSON.parse(raw) : null;
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || res.statusText);
-      }
-      setGroups((prev) => {
-        const copy = new Map(prev);
-        for (const [k, arr] of copy.entries()) {
-          const idx = arr.findIndex((r) => r.id === id);
-          if (idx >= 0) {
-            const newArr = [...arr];
-            newArr.splice(idx, 1);
-            copy.set(k, newArr);
-            if (!newArr.length) copy.delete(k);
-            break;
-          }
-        }
-        return copy;
-      });
-    } catch (e: any) {
-      console.error(e);
-      alert(`削除に失敗しました: ${e.message || e}`);
-    }
-  }
-
-  const dayKeysDesc = useMemo(
-    () => Array.from(groups.keys()).sort((a, b) => b.localeCompare(a)),
-    [groups]
-  );
+  if (loading) return <div>読み込み中…</div>;
 
   return (
     <div>
@@ -177,80 +116,62 @@ export default function LogList() {
 
       <h2>直近の記録</h2>
 
-      {loading && <p>読み込み中…</p>}
-
-      {!loading && dayKeysDesc.length === 0 && <p>記録がありません。</p>}
+      <button onClick={fetchList} style={{ marginBottom: 12 }}>
+        再読み込み
+      </button>
 
       <ul>
-        {dayKeysDesc.map((day) => (
-          <li key={day} style={{ marginBottom: 16 }}>
-            <strong>・{day}</strong>
+        {grouped.map(([date, rows]) => (
+          <li key={date} style={{ marginBottom: 16 }}>
+            <strong>{date}</strong>
             <ul>
-              {groups.get(day)!.map((row) => {
-                const editing = editingId === row.id;
-                if (!editing) {
-                  return (
-                    <li key={row.id} style={{ marginTop: 6 }}>
-                      ・ {row.is_income ? "収入" : "支出"}：{row.amount} 円{" "}
-                      {row.memo ? `(${row.memo})` : ""}
-                      <button style={{ marginLeft: 8 }} onClick={() => beginEdit(row)}>
-                        編集
-                      </button>
-                      <button style={{ marginLeft: 4 }} onClick={() => remove(row.id)}>
-                        削除
-                      </button>
-                    </li>
-                  );
-                }
-                // 編集フォーム
+              {rows.map((it) => {
+                const isEditing = editingId === it.id;
                 return (
-                  <li key={row.id} style={{ marginTop: 6 }}>
-                    ・
-                    <label style={{ marginLeft: 6 }}>
-                      日付：
-                      <input
-                        type="date"
-                        value={editDate}
-                        onChange={(e) => setEditDate(e.target.value)}
-                        style={{ marginLeft: 6 }}
-                      />
-                    </label>
-                    <label style={{ marginLeft: 10 }}>
-                      金額：
-                      <input
-                        type="number"
-                        value={editAmount}
-                        onChange={(e) => setEditAmount(Number(e.target.value))}
-                        style={{ width: 90, marginLeft: 6 }}
-                      />
-                    </label>
-                    <label style={{ marginLeft: 10 }}>
-                      メモ：
-                      <input
-                        type="text"
-                        value={editMemo}
-                        onChange={(e) => setEditMemo(e.target.value)}
-                        style={{ width: 260, marginLeft: 6 }}
-                      />
-                    </label>
-                    <label style={{ marginLeft: 10 }}>
-                      収入？
-                      <input
-                        type="checkbox"
-                        checked={editIncome}
-                        onChange={(e) => setEditIncome(e.target.checked)}
-                        style={{ marginLeft: 6 }}
-                      />
-                    </label>
-                    <button
-                      style={{ marginLeft: 8 }}
-                      onClick={() => saveEdit(row.id)}
-                    >
-                      保存
-                    </button>
-                    <button style={{ marginLeft: 6 }} onClick={cancelEdit}>
-                      キャンセル
-                    </button>
+                  <li key={it.id} style={{ margin: "6px 0" }}>
+                    {isEditing ? (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <div>日付：</div>
+                        <input
+                          type="date"
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                        />
+                        <div>金額：</div>
+                        <input
+                          type="number"
+                          value={editAmount}
+                          onChange={(e) => setEditAmount(Number(e.target.value))}
+                          style={{ width: 90 }}
+                        />
+                        <div>メモ：</div>
+                        <input
+                          type="text"
+                          value={editMemo}
+                          onChange={(e) => setEditMemo(e.target.value)}
+                          style={{ width: 220 }}
+                        />
+                        <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          収入？
+                          <input
+                            type="checkbox"
+                            checked={editIncome}
+                            onChange={(e) => setEditIncome(e.target.checked)}
+                          />
+                        </label>
+                        <button onClick={() => onSave(it.id)}>保存</button>
+                        <button onClick={onCancelEdit}>キャンセル</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span>
+                          ・{it.is_income ? "収入" : "支出"}：{it.amount} 円
+                          {it.memo ? `（${it.memo}）` : ""}
+                        </span>
+                        <button onClick={() => onClickEdit(it)}>編集</button>
+                        <button onClick={() => onDelete(it.id)}>削除</button>
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -258,10 +179,6 @@ export default function LogList() {
           </li>
         ))}
       </ul>
-
-      <button onClick={load} style={{ marginTop: 12 }}>
-        再読み込み
-      </button>
     </div>
   );
 }
