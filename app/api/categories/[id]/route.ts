@@ -2,18 +2,15 @@
 import { NextResponse } from "next/server";
 import { requireAuthProfile } from "@/lib/supabase/server";
 
-// 小さなヘルパ
-const json = (body: unknown, init = 200) =>
-  NextResponse.json(body as any, { status: init });
+function json<T>(body: T, status = 200) {
+  return NextResponse.json(body as any, { status });
+}
 
-type Ctx = { params: { id: string } };
-
-// PATCH /api/categories/:id
-export async function PATCH(req: Request, { params }: Ctx) {
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAuthProfile();
   if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
 
-  let name: string | undefined;
+  let name = "";
   try {
     const b = await req.json();
     name = (b?.name ?? "").trim();
@@ -23,7 +20,6 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!name) return json({ ok: false, error: "name is required" }, 400);
 
   const { supabase, profileId } = auth;
-
   const { data, error } = await supabase
     .from("categories")
     .update({ name })
@@ -34,7 +30,24 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   if (error) return json({ ok: false, error: error.message }, 500);
   if (!data) return json({ ok: false, error: "Not found or not owned" }, 404);
+  return json({ ok: true, item: data });
+}
 
-  return json({ ok: true, item: data }, 200);
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireAuthProfile();
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+
+  const { supabase, profileId } = auth;
+  const { data, error } = await supabase
+    .from("categories")
+    .delete()
+    .eq("id", params.id)
+    .eq("profile_id", profileId)
+    .select()
+    .maybeSingle();
+
+  if (error) return json({ ok: false, error: error.message }, 500);
+  if (!data) return json({ ok: false, error: "Not found or not owned" }, 404);
+  return json({ ok: true });
 }
 

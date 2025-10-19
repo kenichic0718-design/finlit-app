@@ -10,62 +10,76 @@ type Category = {
 };
 
 type Props = {
-  expenseCategories: Category[];
-  incomeCategories: Category[];
+  expenseCategories?: Category[];
+  incomeCategories?: Category[];
 };
 
-export default function PageClient({ expenseCategories, incomeCategories }: Props) {
-  const [exp, setExp] = useState(expenseCategories);
-  const [inc, setInc] = useState(incomeCategories);
+export default function PageClient({
+  // デフォルトを空配列に固定（受け取りで undefined を潰す）
+  expenseCategories = [],
+  incomeCategories = [],
+}: Props) {
+  const [exp, setExp] = useState<Category[]>(expenseCategories ?? []);
+  const [inc, setInc] = useState<Category[]>(incomeCategories ?? []);
 
   const lists = useMemo(
     () => [
       { title: "支出カテゴリ", kind: "expense" as const, data: exp, set: setExp },
-      { title: "収入カテゴリ", kind: "income" as const, data: inc, set: setInc },
+      { title: "収入カテゴリ", kind: "income"  as const, data: inc, set: setInc },
     ],
     [exp, inc]
   );
 
-  const renameCategory = useCallback(
-    async (cat: Category) => {
-      const next = window.prompt("新しいカテゴリ名を入力してください", cat.name)?.trim();
-      if (!next) return;
+  const renameCategory = useCallback(async (cat: Category) => {
+    const next = window.prompt("新しいカテゴリ名を入力してください", cat.name)?.trim();
+    if (!next) return;
 
-      const res = await fetch(`/api/categories/${cat.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ name: next }),
-      });
+    const res = await fetch(`/api/categories/${cat.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ name: next }),
+    });
 
-      // 405/404の再発防止: ここは必ず /categories/:id に送る（クエリ版に送らない）
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok || !payload?.ok) {
-        alert(`更新に失敗しました: ${payload?.error ?? res.statusText}`);
-        return;
-      }
+    let payload: any = {};
+    try {
+      payload = await res.json();
+    } catch {
+      alert(`更新に失敗しました: ${res.status} ${res.statusText}`);
+      return;
+    }
 
-      // ローカルにも即時反映（再読込不要）
-      const mutate = (arr: Category[]) =>
-        arr.map((c) => (c.id === cat.id ? { ...c, name: next } : c));
+    if (!res.ok || !payload?.ok) {
+      alert(`更新に失敗しました: ${payload?.error ?? res.statusText}`);
+      return;
+    }
 
-      if (cat.kind === "expense") setExp((a) => mutate(a));
-      else setInc((a) => mutate(a));
-    },
-    []
-  );
+    const apply = (arr: Category[]) => arr.map((c) => (c.id === cat.id ? { ...c, name: next } : c));
+    if (cat.kind === "expense") setExp((a) => apply(a));
+    else setInc((a) => apply(a));
+  }, []);
 
   const deleteCategory = useCallback(async (cat: Category) => {
     if (!confirm(`「${cat.name}」を削除します。よろしいですか？`)) return;
+
     const res = await fetch(`/api/categories/${cat.id}`, { method: "DELETE", cache: "no-store" });
-    const payload = await res.json().catch(() => ({}));
+
+    let payload: any = {};
+    try {
+      payload = await res.json();
+    } catch {
+      alert(`削除に失敗しました: ${res.status} ${res.statusText}`);
+      return;
+    }
+
     if (!res.ok || !payload?.ok) {
       alert(`削除に失敗しました: ${payload?.error ?? res.statusText}`);
       return;
     }
-    const filter = (arr: Category[]) => arr.filter((c) => c.id !== cat.id);
-    if (cat.kind === "expense") setExp((a) => filter(a));
-    else setInc((a) => filter(a));
+
+    const filt = (arr: Category[]) => arr.filter((c) => c.id !== cat.id);
+    if (cat.kind === "expense") setExp((a) => filt(a));
+    else setInc((a) => filt(a));
   }, []);
 
   const addCategory = useCallback(async (kind: "expense" | "income") => {
@@ -78,18 +92,27 @@ export default function PageClient({ expenseCategories, incomeCategories }: Prop
       cache: "no-store",
       body: JSON.stringify({ name, kind }),
     });
-    const payload = await res.json().catch(() => ({}));
+
+    let payload: any = {};
+    try {
+      payload = await res.json();
+    } catch {
+      alert(`追加に失敗しました: ${res.status} ${res.statusText}`);
+      return;
+    }
+
     if (!res.ok || !payload?.ok) {
       alert(`追加に失敗しました: ${payload?.error ?? res.statusText}`);
       return;
     }
+
     const item: Category = payload.item;
     if (item.kind === "expense") setExp((a) => [...a, item]);
     else setInc((a) => [...a, item]);
   }, []);
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 p-4">
       <h1 className="text-2xl font-bold">設定</h1>
 
       {lists.map(({ title, kind, data }) => (
@@ -107,7 +130,7 @@ export default function PageClient({ expenseCategories, incomeCategories }: Prop
           </div>
 
           <ul className="space-y-2">
-            {data.map((cat) => (
+            {(data ?? []).map((cat) => (
               <li key={cat.id} className="flex items-center gap-3">
                 <span className="min-w-24">{cat.name}</span>
                 <button
