@@ -1,59 +1,77 @@
 // app/api/categories/route.ts
+import 'server-only';
 import { NextResponse } from 'next/server';
-import { getRouteClient } from '@/app/_supabase/route';
+import { requireAuthProfile } from '@/lib/supabase/server';
 
-type RowLoose = {
-  id: string;
-  name: string;
-  is_income?: boolean | null;
-  position?: number | null;
-};
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-export async function GET() {
+type Kind = 'expense' | 'income';
+
+function json<T>(body: T, status = 200) {
+  return NextResponse.json(body as any, { status });
+}
+
+function isKind(v: unknown): v is Kind {
+  return v === 'expense' || v === 'income';
+}
+
+/**
+ * GET /api/categories?kind=expense|income
+ * 認証ユーザーのカテゴリ一覧を取得
+ */
+export async function GET(req: Request) {
+  const auth = await requireAuthProfile();
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+
+  const { searchParams } = new URL(req.url);
+  const kind = searchParams.get('kind') as Kind | null;
+
+  const q = auth.supabase
+    .from('categories')
+    .select('*')
+    .eq('profile_id', auth.profileId)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true });
+
+  const { data, error } = kind ? await q.eq('kind', kind) : await q;
+  if (error) return json({ ok: false, error: error.message }, 500);
+
+  return json({ ok: true, items: data ?? [] });
+}
+
+/**
+ * POST /api/categories
+ * body: { name: string, kind: 'expense'|'income' }
+ * 追加（/add ラッパーからも呼ばれます）
+ */
+export async function POST(req: Request) {
+  const auth = await requireAuthProfile();
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+
+  let body: any;
   try {
-    const supabase = getRouteClient();
-    const from = supabase.from('categories');
-
-    // 1st: 全部（position あり想定）
-    let data: RowLoose[] | null = null;
-
-    // 1) id,name,is_income,position
-    {
-      const { data: d1, error: e1 } = await from.select('id,name,is_income,position');
-      if (!e1) data = d1 as RowLoose[]; else {
-        // 2) id,name,is_income
-        const { data: d2, error: e2 } = await from.select('id,name,is_income');
-        if (!e2) data = d2 as RowLoose[]; else {
-          // 3) id,name
-          const { data: d3, error: e3 } = await from.select('id,name');
-          if (e3) {
-            return NextResponse.json({ ok: false, error: e3.message }, { status: 500 });
-          }
-          data = d3 as RowLoose[];
-        }
-      }
-    }
-
-    const rows = data ?? [];
-
-    // UI が期待する形に正規化（position 無ければ 0）
-    const items = rows
-      .map(r => ({
-        id: r.id,
-        name: r.name,
-        type: r.is_income ? ('income' as const) : ('expense' as const),
-        position: r.position ?? 0,
-      }))
-      // position が無くても安全にソート
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type < b.type ? -1 : 1;
-        if (a.position !== b.position) return a.position - b.position;
-        return a.name.localeCompare(b.name, 'ja');
-      });
-
-    return NextResponse.json({ ok: true, items });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
+    body = await req.json();
+  } catch {
+    return json({ ok: false, error: 'Invalid JSON' }, 400);
   }
+
+  const rawName = typeof body?.name === 'string' ? body.name.trim() : '';
+  const rawKind = body?.kind;
+
+  if (!rawName) return json({ ok: false, error: 'name is required' }, 400);
+  if (!isKind(rawKind)) return json({ ok: false, error: 'kind must be "expense" or "income"' }, 400);
+
+  const { supabase, profileId } = auth;
+
+  const { data, error } = await supabase
+    .from('categories')
+    .insert([{ name: rawName, kind: rawKind as Kind, profile_id: profileId }])
+    .select()
+    .maybeSingle();
+
+  if (error) return json({ ok: false, error: error.message }, 500);
+
+  return json({ ok: true, item: data }, 201);
 }
 
