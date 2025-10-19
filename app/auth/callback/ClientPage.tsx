@@ -1,62 +1,83 @@
 // app/auth/callback/ClientPage.tsx
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
 
+/** URL の #hash を { key: value } にパース */
+function parseHashParams(hash: string): Record<string, string> {
+  const h = hash.startsWith('#') ? hash.slice(1) : hash;
+  const sp = new URLSearchParams(h);
+  const obj: Record<string, string> = {};
+  sp.forEach((v, k) => (obj[k] = v));
+  return obj;
+}
+
 export default function ClientPage() {
   const router = useRouter();
-  const params = useSearchParams();
+  const sp = useSearchParams();
+  const [error, setError] = useState<string | null>(null);
+
+  const redirectTo = useMemo(() => sp.get('redirect_to') || '/settings', [sp]);
 
   useEffect(() => {
-    async function run() {
+    const run = async () => {
       const supabase = getSupabaseBrowser();
 
-      // 1) code フロー（query に code がある）
-      const code = params.get('code');
-      const redirectTo = params.get('redirect_to') || '/settings';
+      // 1) ハッシュ（email magic link など）
+      const hashParams = parseHashParams(window.location.hash || '');
+      const access_token = hashParams['access_token'];
+      const refresh_token = hashParams['refresh_token'];
 
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          console.error('exchangeCodeForSession error', error);
+      try {
+        if (access_token && refresh_token) {
+          // Magic Link（hash）→ セッション確立
+          await supabase.auth.setSession({ access_token, refresh_token });
+
+          // ハッシュが残ると今後のルーティングで邪魔なので消してリダイレクト
+          const clean = new URL(window.location.href);
+          clean.hash = '';
+          window.history.replaceState(null, '', clean.toString());
+          router.replace(redirectTo);
+          router.refresh();
+          return;
         }
-        router.replace(redirectTo);
-        return;
-      }
 
-      // 2) ハッシュフロー（/#access_token=... のケース）
-      const hash = window.location.hash; // 例: #access_token=...&refresh_token=...
-      if (hash?.includes('access_token')) {
-        const qs = new URLSearchParams(hash.slice(1));
-        const access_token = qs.get('access_token')!;
-        const refresh_token = qs.get('refresh_token');
-
-        // アクセストークンだけでも setSession できます
-        const { error } = await supabase.auth.setSession({
-          access_token,
-          refresh_token: refresh_token || undefined,
-        });
-        if (error) {
-          console.error('setSession error', error);
+        // 2) クエリ code（PKCE / OAuth）
+        const code = sp.get('code');
+        if (code) {
+          await supabase.auth.exchangeCodeForSession(code);
+          router.replace(redirectTo);
+          router.refresh();
+          return;
         }
-        router.replace(redirectTo);
-        return;
-      }
 
-      // 何も無ければログインへ
-      router.replace('/login');
-    }
+        // 3) 何もない → 案内
+        setError('No auth code/token found in URL hash/query.');
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message ?? 'Failed to complete sign-in.');
+      }
+    };
 
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (error) {
+    return (
+      <main style={{ padding: 24 }}>
+        <h1 style={{ fontSize: 18, fontWeight: 600 }}>Auth Callback</h1>
+        <p style={{ marginTop: 8, color: 'crimson' }}>{error}</p>
+      </main>
+    );
+  }
+
   return (
     <main style={{ padding: 24 }}>
       <h1 style={{ fontSize: 18, fontWeight: 600 }}>Auth Callback</h1>
-      <p style={{ marginTop: 8 }}>Processing sign-in…</p>
+      <p style={{ marginTop: 8 }}>Completing sign-in…</p>
     </main>
   );
 }
