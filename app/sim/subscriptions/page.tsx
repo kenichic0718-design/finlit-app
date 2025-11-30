@@ -1,3 +1,4 @@
+// app/sim/subscriptions/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -24,7 +25,7 @@ function ymAdd(month: string, diff: number) {
 
 // 当月/過去月の支出ログを取得（契約は現状維持）
 async function fetchMonth(kind: 'expense' | 'income', month: string): Promise<LogRes> {
-  const r = await fetch(`/api/logs?month=${ym}&kind=${kind}`, { credentials: 'include' });
+  const r = await fetch(`/api/logs?month=${month}&kind=${kind}`, { credentials: 'include' });
   return r.json();
 }
 
@@ -244,4 +245,3 @@ export default function Page() {
     </main>
   );
 }
-
