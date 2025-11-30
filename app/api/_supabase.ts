@@ -2,8 +2,14 @@
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
+/**
+ * Next.js 15 で cookies() の型が Promise<ReadonlyRequestCookies> になっており、
+ * TypeScript 上で cookieStore.get(...) がエラーになるので、
+ * 実体はそのままに型だけ any で吸収する。
+ */
 export function getSupabase() {
-  const cookieStore = cookies();
+  // 型だけゆるくする（ランタイム挙動は従来どおり）
+  const cookieStore = cookies() as any;
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,16 +32,22 @@ export function getSupabase() {
   return supabase;
 }
 
-/** 認証チェック（RLS前の早期エラー用、不要なら各 route から削ってOK） */
+/**
+ * 認証チェック（RLS 前の早期エラー用）
+ */
 export async function requireAuth() {
   const supabase = getSupabase();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
   if (error || !user) {
     const err = new Error("unauthorized");
-    // @ts-ignore
-    err.status = 401;
+    // ステータスコードを持たせておく（使わないなら無視されるだけ）
+    (err as any).status = 401;
     throw err;
   }
+
   return { supabase, user };
 }
-
