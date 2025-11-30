@@ -1,14 +1,19 @@
-import { NextRequest } from 'next/server';
-import { createSupabaseRouteClient } from '@/app/_utils/supabaseRoute';
+// app/api/debug/session/route.ts
+import { NextResponse } from "next/server";
 
-export async function GET(req: NextRequest) {
-  const { supabase, json } = createSupabaseRouteClient(req);
-  const { data, error } = await supabase.auth.getSession();
-  return json({
-    ok: !error,
-    hasSession: !!data?.session,
-    userId: data?.session?.user?.id || null,
-    error: error?.message || null,
+/**
+ * 本番ビルド用のデバッグスタブ
+ *
+ * Supabase には触れず、常に ok:true を返すだけのルート。
+ * ローカルで本格的にセッション確認したい場合は、
+ * 別の _debug ルートを使う or ここを書き直す。
+ */
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    hasSession: null,
+    userId: null,
+    error: null,
+    note: "debug session route is stubbed for production build",
   });
 }
-
