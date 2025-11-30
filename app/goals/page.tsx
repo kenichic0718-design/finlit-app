@@ -1,3 +1,4 @@
+// app/goals/page.tsx
 import Link from "next/link";
 import { getJSON } from "@/lib/api";
 import { yen, safeDiv, ymLabel } from "@/lib/format";
@@ -8,6 +9,7 @@ type GoalRow = {
   actual: number;     // 実績（当月、支出は使用額 / 収入は入金額）
   target: number;     // 目標（支出は予算 / 収入は目標）
 };
+
 type GoalPageData = {
   month: string;
   kind: "expense" | "income";
@@ -20,8 +22,16 @@ async function fetchData(kind: "expense" | "income"): Promise<GoalPageData> {
   return getJSON<GoalPageData>(`/api/goals?kind=${kind}`);
 }
 
-export default async function GoalsPage({ searchParams }: { searchParams: { tab?: "expense" | "income" } }) {
-  const kind = searchParams.tab === "income" ? "income" : "expense";
+export default async function GoalsPage(
+  { searchParams }: { searchParams?: any }
+) {
+  // Next.js 15 では searchParams が Promise の可能性があるので両対応する
+  const resolvedParams =
+    searchParams && typeof (searchParams as any).then === "function"
+      ? await (searchParams as Promise<{ tab?: "expense" | "income" }>)
+      : ((searchParams as { tab?: "expense" | "income" } | undefined) ?? {});
+
+  const kind = resolvedParams.tab === "income" ? "income" : "expense";
   const data = await fetchData(kind);
   const prog = safeDiv(data.totalActual, data.totalTarget);
 
@@ -35,18 +45,28 @@ export default async function GoalsPage({ searchParams }: { searchParams: { tab?
         <div className="flex gap-2">
           <Link
             href="/goals?tab=expense"
-            className={`px-3 py-1 rounded-md text-sm ${kind === "expense" ? "bg-white/10" : "bg-white/5 hover:bg-white/10"}`}
+            className={`px-3 py-1 rounded-md text-sm ${
+              kind === "expense"
+                ? "bg-white/10"
+                : "bg-white/5 hover:bg-white/10"
+            }`}
           >
             支出
           </Link>
           <Link
             href="/goals?tab=income"
-            className={`px-3 py-1 rounded-md text-sm ${kind === "income" ? "bg-white/10" : "bg-white/5 hover:bg-white/10"}`}
+            className={`px-3 py-1 rounded-md text-sm ${
+              kind === "income"
+                ? "bg-white/10"
+                : "bg-white/5 hover:bg-white/10"
+            }`}
           >
             収入
           </Link>
           <Link
-            href={`/sim/goal?prefill=${encodeURIComponent(JSON.stringify({ month: data.month }))}`}
+            href={`/sim/goal?prefill=${encodeURIComponent(
+              JSON.stringify({ month: data.month })
+            )}`}
             className="px-3 py-1 rounded-md text-sm bg-white/5 hover:bg-white/10"
           >
             詳しく試算（/sim/goal）
@@ -59,16 +79,22 @@ export default async function GoalsPage({ searchParams }: { searchParams: { tab?
           {kind === "expense" ? "今月の使用状況" : "今月の達成状況"}
         </h2>
         <div className="mt-1 text-lg">
-          {kind === "expense" ? "予算合計" : "目標合計"} {yen(data.totalTarget)} / 実績 {yen(data.totalActual)}
+          {kind === "expense" ? "予算合計" : "目標合計"}{" "}
+          {yen(data.totalTarget)} / 実績 {yen(data.totalActual)}
         </div>
-        <div className="mt-3"><ProgressBar value={prog} /></div>
+        <div className="mt-3">
+          <ProgressBar value={prog} />
+        </div>
       </section>
 
       <div className="space-y-3">
         {data.rows.map((r) => {
           const p = safeDiv(r.actual, r.target);
           return (
-            <div key={r.name} className="rounded-lg border border-white/10 p-3">
+            <div
+              key={r.name}
+              className="rounded-lg border border-white/10 p-3"
+            >
               <div className="flex items-center">
                 <div className="font-medium">{r.name}</div>
                 <div className="text-sm text-neutral-400 ml-auto">
@@ -81,7 +107,9 @@ export default async function GoalsPage({ searchParams }: { searchParams: { tab?
                   {kind === "expense" ? "予算未設定" : "目標未設定"}
                 </Link>
               </div>
-              <div className="mt-2"><ProgressBar value={p} /></div>
+              <div className="mt-2">
+                <ProgressBar value={p} />
+              </div>
             </div>
           );
         })}
@@ -89,4 +117,3 @@ export default async function GoalsPage({ searchParams }: { searchParams: { tab?
     </div>
   );
 }
-
