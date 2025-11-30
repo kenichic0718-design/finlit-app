@@ -6,7 +6,9 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export function getSupabaseServer() {
-  const store = cookies();
+  // Next.js 15 の型では Promise 扱いになっているが、
+  // 実行時は従来どおり cookie store として使えるため型だけ上書きする
+  const store = cookies() as any;
 
   return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
@@ -23,4 +25,3 @@ export function getSupabaseServer() {
     },
   });
 }
-
