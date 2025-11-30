@@ -4,7 +4,8 @@ import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 export async function POST() {
-  const cookieStore = cookies();
+  // ★ Next 15 では cookies() が Promise 型になっているので await が必要
+  const cookieStore = await cookies();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,4 +28,3 @@ export async function POST() {
   await supabase.auth.signOut();
   return NextResponse.json({ ok: true });
 }
-
