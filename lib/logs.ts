@@ -1,5 +1,6 @@
+// lib/logs.ts
 import dayjs from "dayjs";
-import { supabase } from "./supabase";
+import { createBrowserClient } from "@supabase/ssr";
 
 export type NewLog = {
   category_id: string;
@@ -8,7 +9,16 @@ export type NewLog = {
   note?: string | null;
 };
 
+function getSupabase() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+
 export async function addLog(input: NewLog) {
+  const supabase = getSupabase();
+
   const { error } = await supabase.from("logs").insert({
     category_id: input.category_id,
     amount: input.amount,
@@ -21,9 +31,13 @@ export async function addLog(input: NewLog) {
 
 /** 直近 n 件。カテゴリ名も一緒に */
 export async function getRecentLogs(limit = 50) {
+  const supabase = getSupabase();
+
   const { data, error } = await supabase
     .from("logs")
-    .select("id, category_id, amount, happened_on, note, categories(name,color)")
+    .select(
+      "id, category_id, amount, happened_on, note, categories(name,color)"
+    )
     .order("happened_on", { ascending: false })
     .order("id", { ascending: false })
     .limit(limit);
@@ -34,6 +48,8 @@ export async function getRecentLogs(limit = 50) {
 
 /** 月次集計（クライアント集計の簡易版） */
 export async function getMonthlyTotals(yyyymm = dayjs().format("YYYYMM")) {
+  const supabase = getSupabase();
+
   // 今月分を fetch → JS で集計
   const start = dayjs(yyyymm + "01");
   const end = start.endOf("month");
@@ -52,4 +68,3 @@ export async function getMonthlyTotals(yyyymm = dayjs().format("YYYYMM")) {
   }
   return map; // Map<category_id, sumAmount>
 }
-
