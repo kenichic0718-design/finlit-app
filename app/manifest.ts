@@ -1,5 +1,4 @@
 // app/manifest.ts
-import type { MetadataRoute } from "next";
 
 /**
  * FinLit PWA 用 Web App Manifest
@@ -7,7 +6,7 @@ import type { MetadataRoute } from "next";
  * - ホーム画面に追加したときの名前やテーマカラーなどを定義
  * - アイコンは一旦 /file.svg を使い、PNG アイコンは余裕があれば後で追加
  */
-export default function manifest(): MetadataRoute["manifest"] {
+export default function manifest() {
   return {
     name: "FinLit PWA",
     short_name: "FinLit",
@@ -39,4 +38,3 @@ export default function manifest(): MetadataRoute["manifest"] {
     ],
   };
 }
-
