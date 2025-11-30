@@ -1,5 +1,5 @@
 "use client";
-// app/goals/page.tsx
+// app/goals/Client.tsx
 
 import { useEffect, useMemo, useState } from "react";
 import MonthPicker from "@/components/ui/MonthPicker";
@@ -68,6 +68,7 @@ export default function GoalsPage() {
 
   useEffect(() => {
     reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ym, kind]);
 
   const totalBudget = useMemo(() => rows.reduce((s, x) => s + x.budget, 0), [rows]);
@@ -82,7 +83,8 @@ export default function GoalsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">目標</h1>
         <div className="flex items-center gap-2">
-          <MonthPicker ym={ym} setYm={setYm} />
+          {/* MonthPicker の props 名を month に合わせる */}
+          <MonthPicker month={ym} setYm={setYm} />
           <div className="ml-2 flex gap-2">
             <Pill active={kind === "expense"} onClick={() => setKind("expense")}>
               支出
@@ -156,4 +158,3 @@ export default function GoalsPage() {
     </div>
   );
 }
-
