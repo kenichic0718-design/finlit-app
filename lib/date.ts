@@ -23,11 +23,19 @@ export function monthFromQuery(
 }
 
 /**
- * MonthPicker などから使うラッパー
- * - 既存の monthFromQuery と同じ挙動
+ * MonthPicker 用:
+ * - クエリ（YYYY-MM / YYYYMM / 未指定）から、その月の 1日を表す Date を返す
+ * - monthFromQuery のロジックを流用しているので挙動は揃っている
  */
-export function fromMonthParam(
-  q?: string | null
-): { yyyymm: string; label: string } {
-  return monthFromQuery(q);
+export function fromMonthParam(q?: string | null): Date {
+  const { yyyymm } = monthFromQuery(q);
+  const y = Number(yyyymm.slice(0, 4));
+  const m = Number(yyyymm.slice(4, 6));
+
+  // 念のためガード（基本ここには来ない想定）
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+    return new Date();
+  }
+
+  return new Date(y, m - 1, 1);
 }
