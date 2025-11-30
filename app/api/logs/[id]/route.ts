@@ -3,10 +3,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
-export async function DELETE(
-  _req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_req: Request, ctx: any) {
   // Next.js 15 の ctx.params が Promise でもそうでなくても対応できるようにする
   const params =
     'params' in ctx && typeof (ctx as any).params?.then === 'function'
