@@ -1,7 +1,9 @@
-import 'server-only';
-import Client from './Client';
+// app/sim/goal/page.tsx
+import "server-only";
+import Client from "./Client";
 
-export default async function Page({ searchParams }: { searchParams?: { prefill?: string } }) {
-  return <Client searchParams={searchParams} />;
+export default async function Page({ searchParams }: any) {
+  return (
+    <Client searchParams={searchParams as { prefill?: string } | undefined} />
+  );
 }
-
