@@ -4,8 +4,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
-import { createBrowserClient } from "@supabase/ssr";
-import type { Database } from "@/lib/database.types";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 interface Props {
   user: User;
@@ -16,7 +15,7 @@ interface Props {
  */
 export default function RequiredClient({ user }: Props) {
   const router = useRouter();
-  const supabase = createBrowserClient<Database>();
+  const supabase = getSupabaseBrowser();
   const [loading, setLoading] = useState(true);
   const [questions, setQuestions] = useState<any[]>([]);
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -29,11 +28,12 @@ export default function RequiredClient({ user }: Props) {
         .from("required_questions")
         .select("*")
         .limit(5);
+
       if (!error && data) setQuestions(data);
       setLoading(false);
     }
     load();
-  }, []);
+  }, [supabase]);
 
   // 回答送信
   async function handleSubmit() {
@@ -105,4 +105,3 @@ export default function RequiredClient({ user }: Props) {
     </div>
   );
 }
-
