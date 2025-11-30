@@ -2,7 +2,7 @@
 'use client';
 
 import * as React from 'react';
-import { fetchJSON } from '@/app/_utils/fetchJson';
+import { fetchJson } from '@/app/_utils/fetchJson';
 import type { Category } from '@/types/category';
 import { toast } from '@/app/_utils/toast';
 
@@ -20,7 +20,7 @@ export default function SettingsCategories() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchJSON<Category[]>(`/api/categories?kind=${kind}`);
+      const data = await fetchJson<Category[]>(`/api/categories?kind=${kind}`);
       setItems(data.sort(sorter));
     } catch (e: any) {
       setError(e?.message ?? '読み込みに失敗しました');
@@ -30,12 +30,14 @@ export default function SettingsCategories() {
     }
   }, [kind]);
 
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    void load();
+  }, [load]);
 
   const onAdd = async () => {
     if (!newName.trim()) return;
     try {
-      const created = await fetchJSON<Category>('/api/categories', {
+      const created = await fetchJson<Category>('/api/categories', {
         method: 'POST',
         body: JSON.stringify({ name: newName.trim(), kind }),
       });
@@ -52,11 +54,13 @@ export default function SettingsCategories() {
     if (!trimmed || trimmed === original) return;
     try {
       setBusyId(id);
-      const updated = await fetchJSON<Category>(`/api/categories/${id}`, {
+      const updated = await fetchJson<Category>(`/api/categories/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ name: trimmed }),
       });
-      setItems((prev) => prev.map((c) => (c.id === id ? updated : c)).sort(sorter));
+      setItems((prev) =>
+        prev.map((c) => (c.id === id ? updated : c)).sort(sorter)
+      );
       toast('名称を更新しました', 'success');
     } catch (e: any) {
       toast(e?.message ?? '名称変更に失敗しました', 'error');
@@ -98,11 +102,13 @@ export default function SettingsCategories() {
 
     try {
       setBusyId(id);
-      const updated = await fetchJSON<Category>(`/api/categories/${id}`, {
+      const updated = await fetchJson<Category>(`/api/categories/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ position: newPos }),
       });
-      setItems((prev) => prev.map((c) => (c.id === id ? updated : c)).sort(sorter));
+      setItems((prev) =>
+        prev.map((c) => (c.id === id ? updated : c)).sort(sorter)
+      );
       toast('並び順を更新しました', 'success');
     } catch {
       toast('並び替えに失敗しました', 'error');
@@ -131,7 +137,10 @@ export default function SettingsCategories() {
           onChange={(e) => setNewName(e.target.value)}
           className="rounded border px-2 py-1"
         />
-        <button onClick={onAdd} className="rounded border px-3 py-1 hover:bg-zinc-100">
+        <button
+          onClick={onAdd}
+          className="rounded border px-3 py-1 hover:bg-zinc-100"
+        >
           追加
         </button>
       </div>
@@ -178,7 +187,9 @@ function Row(props: {
 
   return (
     <li className="flex items-center gap-2">
-      <span className="rounded border px-2 py-1 text-xs opacity-70">{item.kind}</span>
+      <span className="rounded border px-2 py-1 text-xs opacity-70">
+        {item.kind}
+      </span>
 
       <input
         value={val}
@@ -189,13 +200,42 @@ function Row(props: {
       />
 
       <div className="ml-auto flex items-center gap-2">
-        <button onClick={props.onTop} disabled={busy} className="rounded border px-2 py-1 disabled:opacity-60">先頭へ</button>
-        <button onClick={props.onUp} disabled={busy} className="rounded border px-2 py-1 disabled:opacity-60">↑</button>
-        <button onClick={props.onDown} disabled={busy} className="rounded border px-2 py-1 disabled:opacity-60">↓</button>
-        <button onClick={props.onBottom} disabled={busy} className="rounded border px-2 py-1 disabled:opacity-60">末尾へ</button>
-        <button onClick={props.onDelete} disabled={busy} className="rounded border px-2 py-1 text-red-600 disabled:opacity-60">削除</button>
+        <button
+          onClick={props.onTop}
+          disabled={busy}
+          className="rounded border px-2 py-1 disabled:opacity-60"
+        >
+          先頭へ
+        </button>
+        <button
+          onClick={props.onUp}
+          disabled={busy}
+          className="rounded border px-2 py-1 disabled:opacity-60"
+        >
+          ↑
+        </button>
+        <button
+          onClick={props.onDown}
+          disabled={busy}
+          className="rounded border px-2 py-1 disabled:opacity-60"
+        >
+          ↓
+        </button>
+        <button
+          onClick={props.onBottom}
+          disabled={busy}
+          className="rounded border px-2 py-1 disabled:opacity-60"
+        >
+          末尾へ
+        </button>
+        <button
+          onClick={props.onDelete}
+          disabled={busy}
+          className="rounded border px-2 py-1 text-red-600 disabled:opacity-60"
+        >
+          削除
+        </button>
       </div>
     </li>
   );
 }
-
