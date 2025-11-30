@@ -15,7 +15,9 @@ import type { Database } from "@/lib/database.types";
  *   /logout や /api/auth/signout が担当）。
  */
 export function supabaseServer() {
-  const cookieStore = cookies();
+  // Next.js 15 で cookies() の型が Promise 扱いされているため、
+  // ここでは any キャストで型エラーだけを吸収する（挙動は従来どおり）。
+  const cookieStore = cookies() as any;
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -30,4 +32,3 @@ export function supabaseServer() {
 
   return supabase;
 }
-
