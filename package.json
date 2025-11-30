@@ -13,10 +13,12 @@
     "@supabase/auth-helpers-nextjs": "0.10.0",
     "@supabase/ssr": "0.7.0",
     "@supabase/supabase-js": "2.75.1",
+    "chart.js": "^4.5.1",
     "clsx": "^2.1.1",
     "dayjs": "1.11.18",
     "next": "15.5.3",
     "react": "19.1.0",
+    "react-chartjs-2": "^5.3.1",
     "react-dom": "19.1.0",
     "zod": "4.1.12"
   },
