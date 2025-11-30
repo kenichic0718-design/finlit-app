@@ -1,12 +1,18 @@
-export function toYYYYMM(d: Date): string {
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+export function toYYYYMM(d: Date) {
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
-export function monthRange(base: Date) {
-  const start = new Date(base.getFullYear(), base.getMonth(), 1);
-  const end = new Date(base.getFullYear(), base.getMonth() + 1, 0, 23, 59, 59, 999);
-  return { start, end };
+export function toYYYY_MM(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
-export function monthLabels(base: Date) {
-  const days = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
-  return Array.from({ length: days }, (_, i) => `${i + 1}日`);
+export function monthFromQuery(q?: string | null): { yyyymm: string; label: string } {
+  if (!q) {
+    const now = new Date();
+    return { yyyymm: toYYYYMM(now), label: toYYYY_MM(now) };
+  }
+  // 受け付ける：YYYY-MM / YYYYMM
+  const compact = q.includes('-') ? q.replace('-', '') : q;
+  const y = compact.slice(0, 4);
+  const m = compact.slice(4, 6);
+  return { yyyymm: `${y}${m}`, label: `${y}-${m}` };
 }
+

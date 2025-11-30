@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 type Row = { category: string; total: number };
 
 export default function CategoryPie() {
-  const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const supabase = useMemo(() => getSupabaseClient(), []);
   const [rows, setRows] = useState<Row[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
 

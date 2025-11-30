@@ -1,0 +1,296 @@
+// app/logs/page.tsx.bak
+import 'server-only';
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { sumByKind, toNumber, yen, ym as ymNow } from '@/lib/finance';
+
+// ==== types ====
+type Log = {
+  id: string;
+  kind: 'expense'|'income';
+  amount?: number|string|null;
+  amount_int?: number|string|null;
+  occurred_at?: string|null;
+  created_at?: string|null;
+  category_id?: string|null;
+  note?: string|null;
+};
+type Budget = {
+  id: string;
+  kind: 'expense'|'income';
+  amount?: number|string|null;
+  amount_int?: number|string|null;
+  month?: string|null;
+  category_id?: string|null;
+};
+type Category = { id: string; kind?: 'expense'|'income'; name?: string|null; label?: string|null; order?: number|null; };
+type Api<T> = { ok: boolean; items?: T[]; error?: string; detail?: string };
+
+// ==== utils ====
+function thisYM() { return ymNow(); }
+const bust = () => `_t=${Date.now()}`;
+async function j<T>(url: string): Promise<Api<T>> {
+  const r = await fetch(url, { credentials: 'include', headers: { 'cache-control': 'no-store' } });
+  return r.json();
+}
+function toISODate(d: string) {
+  return new Date(d + 'T00:00:00.000Z').toISOString();
+}
+const pendingKey = (ym: string) => `finlit.pending.logs.${ym}`;
+
+// ==== page ====
+export default function LogsPage() {
+  const [month, setMonth] = useState(thisYM());
+
+  // サーバ確定データ
+  const [logs, setLogs] = useState<Log[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [cats, setCats] = useState<Category[]>([]);
+
+  // 楽観反映の保留（永続化対象）
+  const [pending, setPending] = useState<Log[]>([]);
+
+  const [loading, setLoading] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // 入力
+  const [kind, setKind] = useState<'expense'|'income'>('expense');
+  const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0,10));
+  const [categoryId, setCategoryId] = useState<string>('');
+  const [amount, setAmount] = useState<string>('');
+  const [note, setNote] = useState<string>('');
+
+  // カテゴリ名マップ
+  const catName = useMemo(() => {
+    const m = new Map<string,string>();
+    for (const c of cats) m.set(c.id, String(c.name ?? c.label ?? c.id));
+    return m;
+  }, [cats]);
+
+  // 画面表示は（確定＋保留）の和
+  const visibleLogs = useMemo(() => [...logs, ...pending], [logs, pending]);
+
+  // 合計など
+  const expenseUsed = useMemo(() => sumByKind(visibleLogs, 'expense'), [visibleLogs]);
+  const incomeUsed  = useMemo(() => sumByKind(visibleLogs, 'income'),  [visibleLogs]);
+  const expenseTarget = useMemo(() => sumByKind(budgets, 'expense'), [budgets]);
+  const incomeTarget  = useMemo(() => sumByKind(budgets, 'income'),  [budgets]);
+
+  const groupedByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const x of visibleLogs) {
+      if (x.kind !== 'expense') continue;
+      const key = x.category_id ? (catName.get(x.category_id) ?? x.category_id) : '（未分類）';
+      const val = map.get(key) ?? 0;
+      map.set(key, val + Number(x.amount ?? x.amount_int ?? 0));
+    }
+    return Array.from(map.entries())
+      .map(([k, v]) => ({ category: k, total: v }))
+      .sort((a,b)=>b.total-a.total);
+  }, [visibleLogs, catName]);
+
+  // --- pending の永続化 ---
+  // 月が変わったら、その月の pending を復元
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(pendingKey(month));
+      setPending(raw ? (JSON.parse(raw) as Log[]) : []);
+    } catch { setPending([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month]);
+
+  // pending が変わる度に保存
+  useEffect(() => {
+    try {
+      localStorage.setItem(pendingKey(month), JSON.stringify(pending));
+    } catch {/* ignore */}
+  }, [pending, month]);
+
+  // サーバ確定データの取得＋pending 突合
+  async function load() {
+    setLoading(true); setError(null);
+    try {
+      const [l, b, c] = await Promise.all([
+        j<Log>(`/api/logs?ym=${month}&${bust()}`),
+        j<Budget>(`/api/budgets?ym=${month}&${bust()}`),
+        j<Category>(`/api/categories?kind=${kind}&${bust()}`),
+      ]);
+      if (!l.ok) throw new Error(l.error || 'logs failed');
+      if (!b.ok) throw new Error(b.error || 'budgets failed');
+      if (!c.ok) throw new Error(c.error || 'categories failed');
+
+      setLogs(l.items ?? []);
+      setBudgets(b.items ?? []);
+      setCats(c.items ?? []);
+
+      // サーバに現れたものを pending から取り除く（粗結合：金額/種別/カテゴリ/日付）
+      if ((pending?.length ?? 0) && (l.items?.length ?? 0)) {
+        const next = pending.filter(p => {
+          const hit = (l.items ?? []).some(s =>
+            Number(s.amount ?? s.amount_int ?? 0) === Number(p.amount ?? p.amount_int ?? 0) &&
+            s.kind === p.kind &&
+            (s.category_id ?? null) === (p.category_id ?? null) &&
+            // 日付は occurred_at が無ければ created_at 基準で日単位比較
+            ((s.occurred_at ?? s.created_at ?? '').slice(0,10) === (p.occurred_at ?? p.created_at ?? '').slice(0,10))
+          );
+          return !hit;
+        });
+        if (next.length !== pending.length) setPending(next);
+      }
+    } catch (e:any) {
+      setError(e?.message ?? 'failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [month, kind]);
+
+  // 送信：pending に積んでから POST → 取得
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (posting) return;
+
+    const amt = toNumber(amount);
+    const occurredISO = date ? toISODate(date) : undefined;
+
+    setPosting(true); setError(null);
+    try {
+      // 1) 先に pending へ（永続化は useEffect が担保）
+      const optimistic: Log = {
+        id: `tmp-${Date.now()}`,
+        kind,
+        amount: amt,
+        amount_int: amt,
+        category_id: categoryId || null,
+        occurred_at: occurredISO ?? null,
+        created_at: new Date().toISOString(),
+        note: note || null,
+      };
+      setPending(prev => [...prev, optimistic]);
+
+      // 2) サーバへPOST（成否だけ確認）
+      const res = await fetch(`/api/logs?${bust()}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+        body: JSON.stringify({
+          amount: amt,
+          kind,
+          note: note || undefined,
+          category_id: categoryId || undefined,
+          occurred_at: occurredISO,
+        }),
+      });
+      const json: Api<Log> = await res.json();
+      if (!json.ok) {
+        // 失敗したら pending をロールバック
+        setPending(prev => prev.filter(x => x.id !== optimistic.id));
+        throw new Error(json.error || 'post failed');
+      }
+
+      // 3) 入力クリア & 最新取得（pending は load 内の突合で徐々に解消）
+      setAmount(''); setNote('');
+      load();
+    } catch (e:any) {
+      setError(e?.message ?? 'post error');
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  return (
+    <div className="p-4 sm:p-6 space-y-6">
+      <h1 className="text-xl font-semibold">記録</h1>
+
+      {/* 月セレクタ */}
+      <div className="flex items-center gap-3">
+        <label className="text-sm text-muted-foreground">年月</label>
+        <input type="month" value={month} onChange={(e)=>setMonth(e.target.value)} className="rounded-md border bg-background px-3 py-2"/>
+      </div>
+
+      {/* サマリ */}
+      <div className="grid sm:grid-cols-3 gap-4">
+        <div className="rounded-2xl border p-4">
+          <div className="text-sm text-muted-foreground">今月の合計（記録）</div>
+          <div className="mt-1">支出：{yen(expenseUsed)} / 収入：{yen(incomeUsed)}</div>
+        </div>
+        <div className="rounded-2xl border p-4">
+          <div className="text-sm text-muted-foreground">今月の目標（予算）</div>
+          <div className="mt-1">支出枠：{yen(expenseTarget)} / 収入目標：{yen(incomeTarget)}</div>
+        </div>
+        <div className="rounded-2xl border p-4">
+          <div className="text-sm text-muted-foreground">差分</div>
+          <div className="mt-1">
+            支出 残り：{yen(Math.max(0, expenseTarget - expenseUsed))} / 収入 進捗：
+            {incomeTarget ? Math.round((incomeUsed / incomeTarget) * 100) : 0}%
+          </div>
+        </div>
+      </div>
+
+      {/* 入力フォーム */}
+      <form onSubmit={submit} className="rounded-2xl border p-4 space-y-3">
+        <div className="text-sm font-medium">新規記録</div>
+        {error && <div className="text-sm text-red-500">エラー：{String(error)}</div>}
+        <div className="grid lg:grid-cols-5 gap-3">
+          <div className="flex gap-2 items-center">
+            <label className="text-sm">種別</label>
+            <select className="rounded-md border bg-background px-2 py-2" value={kind} onChange={(e)=>setKind(e.target.value as any)}>
+              <option value="expense">支出</option>
+              <option value="income">収入</option>
+            </select>
+          </div>
+          <div className="flex gap-2 items-center">
+            <label className="text-sm">日付</label>
+            <input type="date" className="rounded-md border bg-background px-2 py-2" value={date} onChange={(e)=>setDate(e.target.value)}/>
+          </div>
+          <div className="flex gap-2 items-center">
+            <label className="text-sm">カテゴリ</label>
+            <select className="rounded-md border bg-background px-2 py-2" value={categoryId} onChange={(e)=>setCategoryId(e.target.value)}>
+              <option value="">（未分類）</option>
+              {cats.filter(c => !c.kind || c.kind === kind).map(c => (
+                <option key={c.id} value={c.id}>{c.name ?? c.label ?? c.id}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 items-center">
+            <label className="text-sm">金額(円)</label>
+            <input
+              inputMode="numeric" pattern="[0-9]*" placeholder="1500"
+              className="rounded-md border bg-background px-2 py-2 tabular-nums"
+              value={amount} onChange={(e)=>setAmount(e.target.value.replace(/[^\d]/g,''))}/>
+          </div>
+          <div className="lg:col-span-5 flex gap-2 items-center">
+            <label className="text-sm">メモ</label>
+            <input className="flex-1 rounded-md border bg-background px-2 py-2" placeholder="任意" value={note} onChange={(e)=>setNote(e.target.value)}/>
+            <button type="submit" className="rounded-md bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50" disabled={posting}>
+              {posting ? '送信中…' : '記録する'}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {/* カテゴリ別内訳（当月・支出） */}
+      <section className="space-y-2">
+        <h2 className="text-base font-medium">カテゴリ別内訳（当月・支出）</h2>
+        {loading ? (
+          <div className="text-sm text-muted-foreground">読み込み中…</div>
+        ) : (
+          <ul className="space-y-2">
+            {groupedByCategory.length === 0 ? (
+              <li className="text-sm text-muted-foreground">今月の記録はまだありません。</li>
+            ) : groupedByCategory.map(g => (
+              <li key={g.category} className="rounded-xl border p-3 flex justify-between">
+                <span>{g.category}</span>
+                <span className="tabular-nums">{yen(g.total)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+

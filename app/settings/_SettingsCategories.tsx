@@ -1,129 +1,201 @@
-"use client";
+// app/settings/_SettingsCategories.tsx
+'use client';
 
-import React, { useEffect, useState, useCallback } from "react";
+import * as React from 'react';
+import { fetchJSON } from '@/app/_utils/fetchJson';
+import type { Category } from '@/types/category';
+import { toast } from '@/app/_utils/toast';
 
-type Kind = "expense" | "income";
-type Category = { id: string; name: string; kind: Kind };
+type Kind = 'income' | 'expense';
 
 export default function SettingsCategories() {
-  const [expense, setExpense] = useState<Category[]>([]);
-  const [income, setIncome] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [kind, setKind] = React.useState<Kind>('expense');
+  const [items, setItems] = React.useState<Category[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [newName, setNewName] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
+  const [busyId, setBusyId] = React.useState<string | null>(null);
 
-  // 2種類いっぺんに取得
-  const loadAll = useCallback(async () => {
+  const load = React.useCallback(async () => {
     setLoading(true);
-    setErr(null);
+    setError(null);
     try {
-      const qs = (k: Kind) => `/api/categories?kind=${k}`;
-      const [eRes, iRes] = await Promise.all([fetch(qs("expense")), fetch(qs("income"))]);
-
-      if (!eRes.ok || !iRes.ok) {
-        const eText = !eRes.ok ? await eRes.text() : "";
-        const iText = !iRes.ok ? await iRes.text() : "";
-        throw new Error(`カテゴリ取得に失敗しました\n${eText}\n${iText}`.trim());
-      }
-
-      const eJson = (await eRes.json()) as { ok: boolean; items: Category[] };
-      const iJson = (await iRes.json()) as { ok: boolean; items: Category[] };
-
-      setExpense(eJson.items ?? []);
-      setIncome(iJson.items ?? []);
+      const data = await fetchJSON<Category[]>(`/api/categories?kind=${kind}`);
+      setItems(data.sort(sorter));
     } catch (e: any) {
-      setErr(e?.message || "カテゴリ取得に失敗しました");
+      setError(e?.message ?? '読み込みに失敗しました');
+      toast('読み込みに失敗しました', 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [kind]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await loadAll();
-      if (cancelled) return;
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadAll]);
+  React.useEffect(() => { void load(); }, [load]);
 
-  // --------------- 操作（名称変更・削除）---------------
-  const renameCategory = async (cat: Category) => {
-    const name = window.prompt("新しい名称を入力してください", cat.name);
-    if (!name || name.trim() === "" || name.trim() === cat.name) return;
-
-    const res = await fetch(`/api/categories/${cat.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() }),
-    });
-    if (!res.ok) {
-      const t = await res.text();
-      alert(`名称変更に失敗しました\n${t}`);
-      return;
+  const onAdd = async () => {
+    if (!newName.trim()) return;
+    try {
+      const created = await fetchJSON<Category>('/api/categories', {
+        method: 'POST',
+        body: JSON.stringify({ name: newName.trim(), kind }),
+      });
+      setItems((prev) => [...prev, created].sort(sorter));
+      setNewName('');
+      toast('カテゴリを追加しました', 'success');
+    } catch (e: any) {
+      toast(e?.message ?? '追加に失敗しました', 'error');
     }
-    await loadAll();
   };
 
-  const deleteCategory = async (cat: Category) => {
-    if (!window.confirm(`「${cat.name}」を削除します。よろしいですか？`)) return;
-    const res = await fetch(`/api/categories/${cat.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const t = await res.text();
-      alert(`削除に失敗しました\n${t}`);
-      return;
+  const onRename = async (id: string, name: string, original: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === original) return;
+    try {
+      setBusyId(id);
+      const updated = await fetchJSON<Category>(`/api/categories/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: trimmed }),
+      });
+      setItems((prev) => prev.map((c) => (c.id === id ? updated : c)).sort(sorter));
+      toast('名称を更新しました', 'success');
+    } catch (e: any) {
+      toast(e?.message ?? '名称変更に失敗しました', 'error');
+    } finally {
+      setBusyId(null);
     }
-    await loadAll();
   };
 
-  // --------------- 表示 ---------------
-  const renderList = (list: Category[]) => {
-    if (loading) return <p className="text-sm text-white/60">読み込み中…</p>;
-    if (err) return <p className="text-sm text-red-400 whitespace-pre-wrap">{err}</p>;
-    if (list.length === 0) return <p className="text-sm text-white/60">まだありません</p>;
+  const onDelete = async (id: string) => {
+    if (!confirm('削除しますか？')) return;
+    try {
+      setBusyId(id);
+      await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+      setItems((prev) => prev.filter((c) => c.id !== id));
+      toast('削除しました', 'success');
+    } catch {
+      toast('削除に失敗しました', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-    return (
-      <ul className="space-y-2">
-        {list.map((c) => (
-          <li
-            key={c.id}
-            className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2"
-          >
-            <span className="truncate">{c.name}</span>
-            <div className="flex items-center gap-2">
-              <button
-                className="rounded-lg border border-white/15 px-2 py-1 text-xs hover:bg-white/10"
-                onClick={() => renameCategory(c)}
-                aria-label={`${c.name} を名称変更`}
-              >
-                名称変更
-              </button>
-              <button
-                className="rounded-lg border border-red-400/30 px-2 py-1 text-xs text-red-300 hover:bg-red-400/10"
-                onClick={() => deleteCategory(c)}
-                aria-label={`${c.name} を削除`}
-              >
-                削除
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    );
+  const move = async (id: string, kindOp: 'up' | 'down' | 'top' | 'bottom') => {
+    const idx = items.findIndex((c) => c.id === id);
+    if (idx < 0) return;
+    const target = items[idx];
+
+    let newPos = target.position;
+    if (kindOp === 'up') newPos = Math.max(0, target.position - 5);
+    if (kindOp === 'down') newPos = target.position + 5;
+    if (kindOp === 'top') {
+      const minPos = Math.min(...items.map((c) => c.position));
+      newPos = Math.max(0, minPos - 10);
+    }
+    if (kindOp === 'bottom') {
+      const maxPos = Math.max(...items.map((c) => c.position));
+      newPos = maxPos + 10;
+    }
+
+    try {
+      setBusyId(id);
+      const updated = await fetchJSON<Category>(`/api/categories/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ position: newPos }),
+      });
+      setItems((prev) => prev.map((c) => (c.id === id ? updated : c)).sort(sorter));
+      toast('並び順を更新しました', 'success');
+    } catch {
+      toast('並び替えに失敗しました', 'error');
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
-    <div className="mt-6 grid gap-6 md:grid-cols-2">
-      <div className="rounded-xl border border-white/10 p-4">
-        <h3 className="mb-3 text-lg font-semibold">支出カテゴリ</h3>
-        {renderList(expense)}
+    <section className="space-y-4">
+      <h2 className="text-xl font-semibold">カテゴリ</h2>
+
+      <div className="flex items-center gap-2">
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as Kind)}
+          className="rounded border px-2 py-1"
+        >
+          <option value="expense">expense</option>
+          <option value="income">income</option>
+        </select>
+
+        <input
+          placeholder="カテゴリ名"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          className="rounded border px-2 py-1"
+        />
+        <button onClick={onAdd} className="rounded border px-3 py-1 hover:bg-zinc-100">
+          追加
+        </button>
       </div>
 
-      <div className="rounded-xl border border-white/10 p-4">
-        <h3 className="mb-3 text-lg font-semibold">収入カテゴリ</h3>
-        {renderList(income)}
-      </div>
-    </div>
+      {loading && <p className="text-sm text-zinc-500">読み込み中…</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <ul className="space-y-2">
+        {items.map((c) => (
+          <Row
+            key={c.id}
+            item={c}
+            busy={busyId === c.id}
+            onRename={(val, original) => onRename(c.id, val, original)}
+            onDelete={() => onDelete(c.id)}
+            onUp={() => move(c.id, 'up')}
+            onDown={() => move(c.id, 'down')}
+            onTop={() => move(c.id, 'top')}
+            onBottom={() => move(c.id, 'bottom')}
+          />
+        ))}
+      </ul>
+    </section>
   );
 }
+
+function sorter(a: Category, b: Category) {
+  if (a.position !== b.position) return a.position - b.position;
+  return a.name.localeCompare(b.name);
+}
+
+function Row(props: {
+  item: Category;
+  busy: boolean;
+  onRename: (val: string, original: string) => void;
+  onDelete: () => void;
+  onUp: () => void;
+  onDown: () => void;
+  onTop: () => void;
+  onBottom: () => void;
+}) {
+  const { item, busy } = props;
+  const [val, setVal] = React.useState(item.name);
+
+  return (
+    <li className="flex items-center gap-2">
+      <span className="rounded border px-2 py-1 text-xs opacity-70">{item.kind}</span>
+
+      <input
+        value={val}
+        onChange={(e) => setVal(e.currentTarget.value)}
+        onBlur={() => props.onRename(val, item.name)}
+        disabled={busy}
+        className="min-w-[180px] rounded border px-2 py-1 disabled:opacity-60"
+      />
+
+      <div className="ml-auto flex items-center gap-2">
+        <button onClick={props.onTop} disabled={busy} className="rounded border px-2 py-1 disabled:opacity-60">先頭へ</button>
+        <button onClick={props.onUp} disabled={busy} className="rounded border px-2 py-1 disabled:opacity-60">↑</button>
+        <button onClick={props.onDown} disabled={busy} className="rounded border px-2 py-1 disabled:opacity-60">↓</button>
+        <button onClick={props.onBottom} disabled={busy} className="rounded border px-2 py-1 disabled:opacity-60">末尾へ</button>
+        <button onClick={props.onDelete} disabled={busy} className="rounded border px-2 py-1 text-red-600 disabled:opacity-60">削除</button>
+      </div>
+    </li>
+  );
+}
+

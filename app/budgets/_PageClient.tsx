@@ -1,40 +1,51 @@
-'use client';
+// app/budgets/_PageClient.tsx
+"use client";
 
-// app/budgets/page.tsx
+import { useState } from "react";
+import BudgetList from "./BudgetList";
 
-import React from "react";
-import BudgetForm from "@/components/BudgetForm";
-import BudgetList from "@/components/BudgetList";
-
-function thisMonth() {
+/** 今日の年月 (YYYY-MM) を返す */
+function currentYm(): string {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
 }
 
-export default function BudgetsPage() {
-  const [month, setMonth] = React.useState(thisMonth());
+/**
+ * 予算ページ クライアント本体
+ *
+ * - 対象月の選択
+ * - BudgetList でカテゴリ別予算を表示・編集
+ */
+export default function PageClient() {
+  const [ym, setYm] = useState<string>(currentYm());
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">予算</h1>
+    <div className="max-w-3xl mx-auto space-y-6 p-4 sm:p-6">
+      <header className="space-y-1">
+        <h1 className="text-xl font-semibold">予算</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          月ごとのカテゴリ別予算を管理します。金額は 100 円単位で入力できます。
+        </p>
+      </header>
 
-      <div className="rounded border border-zinc-700/60 p-4">
-        <h2 className="text-lg font-semibold mb-4">月次予算を追加</h2>
-        <BudgetForm />
-      </div>
-
-      <div className="rounded border border-zinc-700/60 p-4">
-        <div className="flex items-center justify-between mb-3 gap-3">
-          <h2 className="text-lg font-semibold">今月の予算</h2>
+      {/* 対象月の選択 */}
+      <section className="rounded-2xl border bg-background/40 p-4 space-y-2">
+        <div className="text-sm font-medium">対象月</div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <input
             type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700"
+            value={ym}
+            onChange={(e) => setYm(e.target.value)}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           />
         </div>
-        <BudgetList month={month} />
-      </div>
+      </section>
+
+      {/* 一覧（インライン編集） */}
+      <section>
+        <BudgetList ym={ym} />
+      </section>
     </div>
   );
 }

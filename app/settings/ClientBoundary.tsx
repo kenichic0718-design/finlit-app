@@ -1,3 +1,4 @@
+// app/settings/ClientBoundary.tsx
 'use client';
 import React from 'react';
 import Client from './_PageClient';

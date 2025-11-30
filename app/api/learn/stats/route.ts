@@ -1,151 +1,143 @@
 // app/api/learn/stats/route.ts
-export const dynamic = "force-dynamic";
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseServer } from "@/lib/supabaseServer";
+import { getCurrentProfileId } from "@/app/_utils/getCurrentProfileId";
+import {
+  QUESTION_BANK,
+  TOPIC_LABELS,
+  QuizTopicId,
+} from "@/app/learn/quiz/questions";
 
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { randomUUID } from "crypto";
-import { envReady, getSupabaseAdmin } from "@/lib/supabase/server";
-
-// Cookie 名は過去互換のため2つ見る
-const CANDIDATE_COOKIE_NAMES = ["finlit_vid", "vid"];
-
-function ymdUTC(d: Date) {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
-    d.getUTCDate()
-  ).padStart(2, "0")}`;
+/**
+ * question_id → topicId(budget / loan / ...) の逆引きマップ
+ * QUESTION_BANK は静的なので、モジュールロード時に 1 回だけ作る
+ */
+const QUESTION_TO_TOPIC = new Map<string, QuizTopicId>();
+for (const q of QUESTION_BANK) {
+  QUESTION_TO_TOPIC.set(q.id, q.topic);
 }
 
-export async function GET(req: Request) {
+/**
+ * ミニクイズ用の統計情報 API
+ *
+ * - クエリ: ?days=60 など（集計対象の日数）
+ * - 戻り値:
+ *   {
+ *     ok: true,
+ *     byTopic: Array<{
+ *       topic: string;          // 日本語ラベル（例: "家計管理・サブスク"）
+ *       correct: number;        // 期間内の正解数
+ *       total: number;          // 期間内の解いた問題数
+ *       sessions: number;       // 期間内に解いた問題数（暫定で 1問=1カウント）
+ *       rate: number;           // 正答率 0〜1
+ *     }>
+ *   }
+ *
+ * RLS 前提:
+ * - quiz_results.profile_id = auth.uid()
+ */
+export async function GET(req: NextRequest) {
   try {
-    envReady();
-
-    const url = new URL(req.url);
-    const days = Math.max(1, Math.min(60, Number(url.searchParams.get("days") || 30)));
-
-    // 1) profile_id 同定（visitor cookie → profiles）
-    const jar = await cookies();
-    let vid: string | null = null;
-    for (const k of CANDIDATE_COOKIE_NAMES) {
-      const v = jar.get(k)?.value;
-      if (v) {
-        vid = v;
-        break;
-      }
-    }
-    if (!vid) {
-      // Server 側では勝手に cookie は発行しない（/api/profile 等で発行想定）
-      // それでも空で来たら一時発行してしまう（統計0件で返す）
-      vid = randomUUID();
-    }
-
-    const admin = getSupabaseAdmin();
-
-    // profiles から profile_id を取得（無ければ作成）
-    const { data: prof, error: pe } = await admin
-      .from("profiles")
-      .select("id")
-      .eq("visitor_id", vid)
-      .maybeSingle();
-
-    let profileId = prof?.id as string | undefined;
+    const profileId = await getCurrentProfileId();
     if (!profileId) {
-      profileId = randomUUID();
-      const { error: insErr } = await admin
-        .from("profiles")
-        .insert({ id: profileId, visitor_id: vid })
-        .select("id")
-        .single();
-      if (insErr) throw insErr;
+      return NextResponse.json(
+        { ok: false, error: "ログインユーザーが見つかりません。" },
+        { status: 401 }
+      );
     }
 
-    // 2) 該当期間の解答結果を取得（topic は quiz_questions から引く）
-    const since = new Date(Date.now() - days * 86400_000);
-    const sinceIso = since.toISOString();
+    const supabase = supabaseServer();
 
-    const { data: results, error: rErr } = await admin
+    // days パラメータ（デフォルト 60 日・1〜365 の範囲にクランプ）
+    const { searchParams } = new URL(req.url);
+    const daysParam = searchParams.get("days");
+    const rawDays = Number(daysParam ?? "60");
+    const days = Number.isFinite(rawDays)
+      ? Math.min(365, Math.max(1, Math.floor(rawDays)))
+      : 60;
+
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - days);
+    const fromIso = fromDate.toISOString();
+
+    // 期間内の quiz_results を取得
+    // ※ 実テーブルのカラム名に合わせる（question_id / is_correct / created_at）
+    const { data, error } = await supabase
       .from("quiz_results")
-      .select("id, question_id, is_correct, created_at")
+      .select("question_id, is_correct, created_at")
       .eq("profile_id", profileId)
-      .gte("created_at", sinceIso)
-      .order("created_at", { ascending: true });
+      .gte("created_at", fromIso)
+      .order("created_at", { ascending: false });
 
-    if (rErr) throw rErr;
-
-    // 対象が無ければ空で返却（UIプレースホルダ用）
-    if (!results || results.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        todaySolved: 0,
-        todayCorrect: 0,
-        todayRate: 0,
-        byTopic: [],
-        timeline: [],
-      });
+    if (error) {
+      console.error("quiz_results fetch error:", error);
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error.message ?? "クイズ統計の取得に失敗しました。",
+        },
+        { status: 500 }
+      );
     }
 
-    // 3) question_id -> topic を取得（JOIN不要・FK無くてもOK）
-    const qids = Array.from(new Set(results.map((r) => r.question_id).filter(Boolean)));
-    const { data: qs, error: qErr } = await admin
-      .from("quiz_questions")
-      .select("id, topic")
-      .in("id", qids);
+    type QuizResultRow = {
+      question_id: string;
+      is_correct: boolean | null;
+      created_at: string;
+    };
 
-    if (qErr) throw qErr;
+    const rows = (data ?? []) as QuizResultRow[];
 
-    const topicOf = new Map<string, string>();
-    for (const q of qs ?? []) {
-      topicOf.set(String(q.id), String(q.topic));
-    }
+    // topic（日本語ラベル）ごとに集計
+    const byTopicMap = new Map<
+      string,
+      { correct: number; total: number; sessions: number }
+    >();
 
-    // 4) 集計
-    const todayKey = ymdUTC(new Date()); // UTC基準。必要があればJST等に合わせてください
-    let todaySolved = 0;
-    let todayCorrect = 0;
+    for (const row of rows) {
+      const topicId = QUESTION_TO_TOPIC.get(row.question_id);
+      const topicLabel =
+        (topicId && TOPIC_LABELS[topicId]) || "不明なトピック";
 
-    const byTopicMap = new Map<string, { topic: string; solved: number; correct: number }>();
-    const dayMap = new Map<string, { date: string; solved: number; correct: number }>();
+      const stat =
+        byTopicMap.get(topicLabel) ?? {
+          correct: 0,
+          total: 0,
+          sessions: 0,
+        };
 
-    for (const r of results) {
-      const dateKey = ymdUTC(new Date(r.created_at));
-      const isCorrect = !!r.is_correct;
+      stat.total += 1; // 1問解いた
+      stat.sessions += 1; // 暫定: 1問 = 1セッションとしてカウント
 
-      if (dateKey === todayKey) {
-        todaySolved += 1;
-        if (isCorrect) todayCorrect += 1;
+      if (row.is_correct) {
+        stat.correct += 1;
       }
 
-      // timeline（日別）
-      const dayRow = dayMap.get(dateKey) ?? { date: dateKey, solved: 0, correct: 0 };
-      dayRow.solved += 1;
-      if (isCorrect) dayRow.correct += 1;
-      dayMap.set(dateKey, dayRow);
-
-      // byTopic
-      const t = topicOf.get(String(r.question_id)) ?? "その他";
-      const row = byTopicMap.get(t) ?? { topic: t, solved: 0, correct: 0 };
-      row.solved += 1;
-      if (isCorrect) row.correct += 1;
-      byTopicMap.set(t, row);
+      byTopicMap.set(topicLabel, stat);
     }
 
-    const byTopic = Array.from(byTopicMap.values()).sort((a, b) =>
-      a.topic.localeCompare(b.topic, "ja")
+    const byTopic = Array.from(byTopicMap.entries()).map(
+      ([topic, { correct, total, sessions }]) => ({
+        topic,
+        correct,
+        total,
+        sessions,
+        rate: total > 0 ? correct / total : 0,
+      })
     );
-    const timeline = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-    const todayRate = todaySolved === 0 ? 0 : Math.round((todayCorrect / todaySolved) * 100);
-
-    // 旧UI互換のキーも同梱（today_*）
-    return NextResponse.json({
-      ok: true,
-      todaySolved,
-      todayCorrect,
-      todayRate,
-      byTopic,
-      timeline,
-    });
+    return NextResponse.json({ ok: true, byTopic });
   } catch (e: any) {
-    const msg = e?.message ?? String(e);
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    console.error("GET /api/learn/stats error:", e);
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          e?.message ??
+          "クイズ統計の取得中に予期しないエラーが発生しました。",
+      },
+      { status: 500 }
+    );
   }
 }
+

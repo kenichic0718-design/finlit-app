@@ -1,119 +1,138 @@
 // lib/finance.ts
-export function realRate(nominalAprPct: number, inflationPct: number) {
-  const n = nominalAprPct / 100;
-  const i = inflationPct / 100;
-  return (1 + n) / (1 + i) - 1; // 実質年率
+
+// ---------- 型 ----------
+export type LogItem = {
+  id?: string;
+  amount?: number | string | null;
+  amount_int?: number | string | null;
+  kind?: 'expense' | 'income';
+  occurred_at?: string | null;
+  created_at?: string | null;
+  // DBに month カラムは無い想定。互換のため残すが使用しない。
+  month?: string | null;
+  category_id?: string | null;
+  note?: string | null;
+};
+
+export type BudgetItem = {
+  id?: string;
+  amount?: number | string | null;
+  amount_int?: number | string | null;
+  kind?: 'expense' | 'income';
+  month?: string | null; // こちらは月カラムがある前提
+  category_id?: string | null;
+};
+
+// ---------- ユーティリティ ----------
+export function toNumber(v: unknown): number {
+  const n = Number((v as any) ?? 0);
+  return Number.isFinite(n) ? n : 0;
 }
 
-export function pmtForTarget({
-  target,
-  months,
-  aprPct,
-  initial = 0,
-}: { target: number; months: number; aprPct: number; initial?: number }) {
-  const r = aprPct / 100 / 12;
-  const need = Math.max(target - initial * Math.pow(1 + r, months), 0);
-  if (r === 0) return Math.ceil(need / months);
-  const pmt = (need * r) / (Math.pow(1 + r, months) - 1);
-  return Math.ceil(pmt);
-}
-
-export function seriesFromMonthly({
-  monthly,
-  months,
-  aprPct,
-  initial = 0,
-}: { monthly: number; months: number; aprPct: number; initial?: number }) {
-  const r = aprPct / 100 / 12;
-  let bal = initial;
-  const rows: { m: number; balance: number }[] = [];
-  for (let m = 1; m <= months; m++) {
-    bal = bal * (1 + r) + monthly;
-    rows.push({ m, balance: bal });
+// 表示専用
+export function yen(n: number): string {
+  try {
+    return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(n ?? 0);
+  } catch {
+    return `${Math.round(n ?? 0)}円`;
   }
-  return rows;
 }
 
-export function toRealPurchasingPower({
-  nominal,
-  inflationPct,
-}: { nominal: number; inflationPct: number }) {
-  // 1年目以降の実質換算：名目 / (1+π)^(t/12)
-  // チャート用に月次で使うので、個別に計算する
-  return (tMonth: number) =>
-    nominal / Math.pow(1 + inflationPct / 100, tMonth / 12);
-}
-
-/** -------- DCA vs 一括（簡易GBM） -------- */
-function mulberry32(seed: number) {
-  return function () {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function randn(seedFn: () => number) {
-  // Box–Muller
-  const u = seedFn() || 1e-9;
-  const v = seedFn() || 1e-9;
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-export function simulateDcaVsLump({
-  total,
-  months,
-  aprPct,
-  volPct,
-  paths = 200,
-  seed = 42,
-}: {
-  total: number; months: number; aprPct: number; volPct: number; paths?: number; seed?: number;
-}) {
-  const mu_m = Math.log(1 + aprPct / 100) / 12; // 月次平均対数リターン
-  const sigma_m = (volPct / 100) / Math.sqrt(12); // 月次ボラ(近似)
-  const monthly = total / months;
-
-  let dcaWins = 0;
-  const dcaVals: number[] = [];
-  const lumpVals: number[] = [];
-
-  for (let p = 0; p < paths; p++) {
-    const rnd = mulberry32(seed + p);
-    let price = 1;
-    let dcaUnits = 0;
-    let cash = 0;
-
-    // 一括はt=0で全額投資
-    let lumpUnits = total; // 初期価格1の想定
-    for (let m = 1; m <= months; m++) {
-      const z = randn(rnd);
-      const ret = Math.exp((mu_m - 0.5 * sigma_m ** 2) + sigma_m * z); // GBM月次リターン
-      price *= ret;
-
-      // DCA: 毎月“金額”を買う（初期価格1前提なので price で割って口数計算）
-      dcaUnits += monthly / price;
-    }
-    const dcaFinal = dcaUnits * price;
-    const lumpFinal = lumpUnits * price; // 初期価格1で買ってそのまま
-    if (dcaFinal > lumpFinal) dcaWins++;
-    dcaVals.push(dcaFinal);
-    lumpVals.push(lumpFinal);
+// ym（YYYY-MM）を返す。Date/ISO/undefinedに対応
+// 後方互換の alias として toYM を export する
+export function ym(input?: Date | string | null): string {
+  if (!input) return new Date().toISOString().slice(0, 7);
+  if (input instanceof Date) return input.toISOString().slice(0, 7);
+  if (typeof input === 'string') {
+    if (/^\d{4}-\d{2}$/.test(input)) return input;
+    const d = new Date(input);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 7);
   }
+  return new Date().toISOString().slice(0, 7);
+}
+export { ym as toYM };
 
-  const winRate = dcaWins / paths;
-  const median = (arr: number[]) => {
-    const b = [...arr].sort((a, b) => a - b);
-    const i = Math.floor(b.length / 2);
-    return b.length % 2 ? b[i] : (b[i - 1] + b[i]) / 2;
-  };
+// レコード or ISO文字列 or Date から ym を取る（既存画面が使用）
+export function ymOf(src?: any): string {
+  if (src instanceof Date || typeof src === 'string' || src == null) {
+    return ym(src as any);
+  }
+  // record想定：snake/camel どちらも許容
+  const dateLike =
+    src?.occurred_at ??
+    src?.created_at ??
+    src?.occurredAt ??
+    src?.createdAt ??
+    null;
+  return ym(dateLike);
+}
 
-  return {
-    winRate,
-    dcaMedian: median(dcaVals),
-    lumpMedian: median(lumpVals),
-    dcaVals,
-    lumpVals,
-  };
+// 月→UTC範囲 [from, to) を返す（to は翌月1日0時）
+export function ymToRange(month: string): { fromISO: string; toISO: string } {
+  const m = /^\d{4}-\d{2}$/.test(month) ? month : ym(month);
+  const [y, mm] = m.split('-').map((s) => Number(s));
+  const from = new Date(Date.UTC(y, mm - 1, 1, 0, 0, 0, 0));
+  const to = new Date(Date.UTC(y, mm, 1, 0, 0, 0, 0)); // 翌月
+  return { fromISO: from.toISOString(), toISO: to.toISOString() };
+}
+
+// ---------- 配列整形 ----------
+export function normalizeItems(res: any): any[] {
+  if (!res) return [];
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res.items)) return res.items;
+  return [];
+}
+
+// 既存コード互換のラッパー
+export const normalizeLogs = (res: any): LogItem[] =>
+  normalizeItems(res) as LogItem[];
+export const normalizeBudgets = (res: any): BudgetItem[] =>
+  normalizeItems(res) as BudgetItem[];
+
+// ---------- 集計 ----------
+export function sumByKind(
+  items: Array<LogItem | BudgetItem> | undefined | null,
+  kind: 'expense' | 'income'
+): number {
+  const arr = Array.isArray(items) ? items : [];
+  return arr
+    .filter((x) => x?.kind === kind)
+    .reduce((s, x: any) => s + toNumber(x?.amount ?? x?.amount_int), 0);
+}
+
+export function sumAmount(
+  items: Array<LogItem | BudgetItem> | undefined | null
+): number {
+  const arr = Array.isArray(items) ? items : [];
+  return arr.reduce((s, x: any) => s + toNumber(x?.amount ?? x?.amount_int), 0);
+}
+
+export function progress(used: number, target: number): number {
+  if (!target || target <= 0) return 0;
+  const p = (used / target) * 100;
+  return Math.max(0, Math.min(100, Math.round(p)));
+}
+
+// ---------- fetch ヘルパー（既存ページが使用） ----------
+export async function fetchJson(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<any> {
+  const res = await fetch(input as any, { credentials: 'include', ...(init ?? {}) });
+  let data: any = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  // ここでは HTTP ステータスではなく JSON の ok を見る前提に揃える
+  if (!res.ok) {
+    const msg = (data && (data.error || data.message)) || res.statusText;
+    const err = new Error(msg);
+    (err as any).status = res.status;
+    throw err;
+  }
+  return data ?? {};
 }
 

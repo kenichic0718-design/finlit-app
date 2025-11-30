@@ -1,0 +1,28 @@
+// app/log/page.tsx
+import LogList from './LogList';
+
+export const dynamic = 'force-dynamic';
+
+export default function LogPage() {
+  return (
+    <main className="container mx-auto px-4 py-8">
+      <h1 className="text-xl font-bold mb-4">記録</h1>
+
+      {/* 既存の記録フォーム（いまのコードを流用してOK） */}
+      {/* ▼ もしこのページが完全に空の場合、最低限のフォーム例 */}
+      {/* 
+      <form action="/api/logs" method="post" className="space-x-2">
+        <label><input type="radio" name="is_income" value="0" defaultChecked /> 支出</label>
+        <label><input type="radio" name="is_income" value="1" /> 収入</label>
+        <input type="number" step="0.01" name="amount" placeholder="金額" className="border rounded px-2 py-1" />
+        <select name="category_id" className="border rounded px-2 py-1"><option value="">(カテゴリ未設定)</option></select>
+        <button type="submit" className="border rounded px-3 py-1">記録する</button>
+      </form>
+      */}
+
+      {/* 一覧（編集/削除付き） */}
+      <LogList />
+    </main>
+  );
+}
+

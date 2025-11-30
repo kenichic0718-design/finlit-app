@@ -1,55 +1,83 @@
 // middleware.ts
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-// ✅ 本番ホスト名だけを指定（プロトコルなし）
-const PROD_HOST = "finlit-app-chi.vercel.app";
+/**
+ * Supabase のセッションを見て、
+ * - 未ログインで保護ページ → /login へ
+ * - ログイン済みで /login → next or /
+ * を制御する middleware。
+ *
+ * Cookie の get/set は @supabase/ssr 公式のパターンに沿って実装。
+ */
+export async function middleware(req: NextRequest) {
+  // Cookie 書き戻し用のレスポンス（ヘッダを引き継ぐ）
+  const res = NextResponse.next({
+    request: {
+      headers: req.headers,
+    },
+  });
 
-// 内部アセットや除外したいパスはここで弾く
-const EXCLUDE_PREFIXES = [
-  "/_next/",          // Next.js runtime & chunks
-  "/favicon.ico",
-  "/robots.txt",
-  "/sitemap.xml",
-  "/manifest.webmanifest",
-  "/icon.png",
-  "/apple-touch-icon.png",
-  "/images/", "/img/", "/static/", "/public/", // もし使っていれば
-];
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// この関数に引っかかったらミドルウェアをスキップ
-const shouldBypass = (pathname: string) => {
-  // 内部アセット
-  if (EXCLUDE_PREFIXES.some((p) => pathname.startsWith(p))) return true;
-  return false;
-};
+  // middleware 用の Supabase Client（Cookie アダプタ付き）
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      get(name: string) {
+        return req.cookies.get(name)?.value;
+      },
+      set(name: string, value: string, options: CookieOptions) {
+        // middleware では res.cookies.set が公式に許可されている
+        res.cookies.set({ name, value, ...options });
+      },
+      remove(name: string, options: CookieOptions) {
+        res.cookies.set({
+          name,
+          value: '',
+          ...options,
+          maxAge: 0,
+        });
+      },
+    },
+  });
 
-export function middleware(req: NextRequest) {
-  const url = new URL(req.url);
-  const host = req.headers.get("host") ?? "";
+  // 認証済みユーザーを取得
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // 内部アセットは一切触らない
-  if (shouldBypass(url.pathname)) {
-    return NextResponse.next();
+  const path = req.nextUrl.pathname;
+
+  // ログインページと callback は常に許可
+  const isPublic =
+    path.startsWith('/login') ||
+    path.startsWith('/auth/callback');
+
+  // 未ログインで保護ページ → /login へ
+  if (!user && !isPublic) {
+    const loginUrl = req.nextUrl.clone();
+    loginUrl.pathname = '/login';
+    loginUrl.searchParams.set('next', path);
+    return NextResponse.redirect(loginUrl);
   }
 
-  // すでに本番ホストならそのまま通す
-  if (host === PROD_HOST) {
-    return NextResponse.next();
+  // ログイン済みで /login → next へ
+  if (user && path.startsWith('/login')) {
+    const dest = req.nextUrl.searchParams.get('next') || '/';
+    return NextResponse.redirect(new URL(dest, req.url));
   }
 
-  // それ以外のドメイン（localhost/preview など）は本番へリダイレクト
-  // パス・クエリはそのまま維持される
-  url.protocol = "https:";
-  url.host = PROD_HOST;
-
-  // GET/HEAD は 301、その他（POST/PUT/PATCH/DELETE など）はメソッド温存で 307
-  const isSafeMethod = req.method === "GET" || req.method === "HEAD";
-  return NextResponse.redirect(url, isSafeMethod ? 301 : 307);
+  // それ以外は普通に続行（Cookie 更新は res 側に反映される）
+  return res;
 }
 
-// _next などはここで除外してもよいが、上の shouldBypass があるので全体マッチでOK
+// matcher（これが最重要）
 export const config = {
-  matcher: ["/:path*"],
+  matcher: [
+    // 静的ファイル & API & callback は完全除外
+    '/((?!_next/static|_next/image|favicon.ico|robots.txt|manifest.webmanifest|icons|images|api|auth/callback).*)',
+  ],
 };
 

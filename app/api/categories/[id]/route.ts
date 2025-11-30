@@ -1,87 +1,95 @@
 // app/api/categories/[id]/route.ts
-import 'server-only';
-import { NextResponse } from 'next/server';
-import { requireAuthProfile } from '@/lib/supabase/server';
+import { NextResponse } from "next/server";
+import { getSupabaseAdmin, envReady } from "@/lib/supabase/server";
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-function json<T>(body: T, status = 200) {
-  return NextResponse.json(body as any, { status });
-}
-
-type Ctx = { params: { id: string } };
-
-/**
- * PATCH /api/categories/:id
- * body: { name?: string }
- * ※ 所有権（profile_id）が自分のものだけ更新可能
- */
-export async function PATCH(req: Request, { params }: Ctx) {
-  const id = params?.id;
-  if (!id) return json({ ok: false, error: 'Missing id' }, 400);
-
-  const auth = await requireAuthProfile();
-  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
-
-  let body: any;
+// PATCH /api/categories/:id
+// body: { name?: string; order_index?: number; isActive?: boolean }
+export async function PATCH(req: Request, ctx: { params: { id: string } }) {
   try {
-    body = await req.json();
-  } catch {
-    return json({ ok: false, error: 'Invalid JSON' }, 400);
+    if (!envReady()) {
+      return NextResponse.json(
+        { ok: false, error: "Not ready" },
+        { status: 500 }
+      );
+    }
+
+    const id = ctx.params.id;
+    const body = (await req.json().catch(() => ({} as any))) as {
+      name?: string;
+      order_index?: number;
+      isActive?: boolean;
+    };
+
+    const updates: Record<string, any> = {};
+
+    // 名前変更
+    if (typeof body.name === "string") {
+      const trimmed = body.name.trim();
+      if (trimmed.length > 0) {
+        updates.name = trimmed;
+      }
+    }
+
+    // 並び順
+    if (typeof body.order_index === "number") {
+      updates.order_index = body.order_index;
+    }
+
+    // ★ SettingsCategories.tsx から送られてくる isActive を is_active にマッピング
+    if (typeof body.isActive === "boolean") {
+      updates.is_active = body.isActive;
+    }
+
+    // 何も更新項目がなければ 400
+    if (!Object.keys(updates).length) {
+      return NextResponse.json(
+        { ok: false, error: "no updates" },
+        { status: 400 }
+      );
+    }
+
+    const supa = getSupabaseAdmin();
+    const { data, error } = await supa
+      .from("categories")
+      .update(updates)
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, item: data });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "Server error" },
+      { status: 500 }
+    );
   }
-
-  const patch: Record<string, any> = {};
-  if (typeof body?.name === 'string') {
-    const name = body.name.trim();
-    if (!name) return json({ ok: false, error: 'name must not be empty' }, 400);
-    patch.name = name;
-  }
-
-  if (Object.keys(patch).length === 0) {
-    return json({ ok: false, error: 'Nothing to update' }, 400);
-  }
-
-  const { supabase, profileId } = auth;
-
-  const { data, error } = await supabase
-    .from('categories')
-    .update(patch)
-    .eq('id', id)
-    .eq('profile_id', profileId)
-    .select()
-    .maybeSingle();
-
-  if (error) return json({ ok: false, error: error.message }, 500);
-  if (!data) return json({ ok: false, error: 'Not found or not owned' }, 404);
-
-  return json({ ok: true, item: data });
 }
 
-/**
- * DELETE /api/categories/:id
- * ※ 所有権（profile_id）が自分のものだけ削除可能
- */
-export async function DELETE(_req: Request, { params }: Ctx) {
-  const id = params?.id;
-  if (!id) return json({ ok: false, error: 'Missing id' }, 400);
+// DELETE /api/categories/:id
+export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
+  try {
+    if (!envReady()) {
+      return NextResponse.json(
+        { ok: false, error: "Not ready" },
+        { status: 500 }
+      );
+    }
 
-  const auth = await requireAuthProfile();
-  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+    const id = ctx.params.id;
+    const supa = getSupabaseAdmin();
+    const { error } = await supa.from("categories").delete().eq("id", id);
+    if (error) throw error;
 
-  const { supabase, profileId } = auth;
-
-  const { data, error } = await supabase
-    .from('categories')
-    .delete()
-    .eq('id', id)
-    .eq('profile_id', profileId)
-    .select()
-    .maybeSingle();
-
-  if (error) return json({ ok: false, error: error.message }, 500);
-  if (!data) return json({ ok: false, error: 'Not found or not owned' }, 404);
-
-  return json({ ok: true, item: data });
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "Server error" },
+      { status: 500 }
+    );
+  }
 }
 

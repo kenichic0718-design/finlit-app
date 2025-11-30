@@ -3,10 +3,10 @@
 // app/reset-password/page.tsx
 
 import { useEffect, useState } from 'react';
-import { getSupabaseBrowser } from '@/lib/supabase/client';
+import { getSupabaseClient } from '@/lib/supabase/client';
 
 export default function ResetPasswordPage() {
-  const supabase = getSupabaseBrowser();
+  const supabase = getSupabaseClient();
   const [pwd, setPwd] = useState('');
   const [pwd2, setPwd2] = useState('');
   const [msg, setMsg] = useState<string | null>(null);

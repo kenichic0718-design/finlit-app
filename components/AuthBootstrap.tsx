@@ -1,34 +1,32 @@
 // components/AuthBootstrap.tsx
-'use client';
+"use client";
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
-import { useEffect } from 'react';
-import { getSupabaseBrowser } from '@/lib/supabase/client';
-
-/**
- * 匿名/既存セッションを1回だけウォームアップするための軽量ブートストラップ。
- * ここでは createClientComponentClient() を使わず、単一の getSupabaseBrowser() に統一。
- */
 export default function AuthBootstrap() {
+  const router = useRouter();
+  const sp = useSearchParams();
+  const next = sp.get("next") || "/settings";
+
   useEffect(() => {
-    const supabase = getSupabaseBrowser();
+    const supabase = getSupabaseClient();
 
-    // 既存セッションのウォームアップ（副作用なし）
-    let isMounted = true;
-    supabase.auth.getSession().finally(() => {
-      if (!isMounted) return;
-      // 何もしない：目的は GoTrue の初期化のみ
+    // 1) ハッシュのトークンを拾ってセッション確定（implicit）
+    // detectSessionInUrl:true なので getSession() だけでOK
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        router.replace(next);
+      }
     });
 
-    // 状態変化を購読（必要なら）
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      // ここも何もしない。必要なら toasts などを入れる
+    // 2) 以降の変更も拾う
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session) router.replace(next);
     });
-
-    return () => {
-      isMounted = false;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
+    return () => sub.subscription.unsubscribe();
+  }, [router, next]);
 
   return null;
 }
+

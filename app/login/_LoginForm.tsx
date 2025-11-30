@@ -1,63 +1,54 @@
 // app/login/_LoginForm.tsx
-'use client';
+'use client'
 
-import React, { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { getSupabaseBrowser } from '@/lib/supabase/client';
+import { useState } from 'react'
 
-export default function _LoginForm() {
-  const supabase = getSupabaseBrowser();
-  const qs = useSearchParams();
+export default function LoginForm({ next }: { next: string }) {
+  const [email, setEmail] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  const [email, setEmail] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setMsg(null);
-    setErr(null);
-    setLoading(true);
-
-    const origin =
-      typeof window !== 'undefined'
-        ? window.location.origin
-        : process.env.NEXT_PUBLIC_SITE_URL ?? '';
-
-    const redirectToParam = qs.get('redirect_to') ?? '/settings';
-
-    const emailRedirectTo = new URL('/auth/callback', origin);
-    emailRedirectTo.searchParams.set('redirect_to', redirectToParam);
-
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: emailRedirectTo.toString() },
-    });
-
-    setLoading(false);
-    if (error) return setErr(error.message);
-    setMsg('マジックリンクを送信しました。メールをご確認ください。');
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setMsg(null)
+    setBusy(true)
+    try {
+      const res = await fetch('/api/auth/magic', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, next }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.ok) {
+        setMsg(data?.error ?? '送信に失敗しました。時間をおいて再試行してください。')
+        return
+      }
+      setMsg('送信しました。メールのリンクを開いてサインインしてください。')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
-    <div className="space-y-3">
-      <form onSubmit={onSubmit} className="space-y-3">
-        <input
-          type="email"
-          className="input w-full"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <button className="btn" disabled={loading}>
-          {loading ? '送信中…' : 'マジックリンクを送る'}
-        </button>
-      </form>
-      {msg && <p className="text-green-600 text-sm">{msg}</p>}
-      {err && <p className="text-red-600 text-sm">{err}</p>}
-    </div>
-  );
+    <form onSubmit={onSubmit} className="flex items-center gap-2">
+      <input
+        type="email"
+        inputMode="email"
+        placeholder="you@example.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        className="min-w-[260px] rounded bg-neutral-800 px-3 py-2 text-sm"
+      />
+      <button
+        type="submit"
+        disabled={busy}
+        className="rounded bg-neutral-700 px-3 py-2 text-sm hover:bg-neutral-600 disabled:opacity-60"
+      >
+        {busy ? '送信中…' : 'マジックリンクを送る'}
+      </button>
+      {msg && <p className="text-sm opacity-80">{msg}</p>}
+    </form>
+  )
 }
 

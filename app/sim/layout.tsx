@@ -1,6 +1,12 @@
-import 'server-only';
-// app/sim/layout.tsx
-export const dynamic = "force-dynamic";
-export default function SimLayout({ children }: { children: React.ReactNode }) {
-  return <div className="space-y-6">{children}</div>;
+import type { ReactNode } from "react";
+import SimNav from "./_SimNav";
+
+export default function SimLayout({ children }: { children: ReactNode }) {
+  return (
+    <div className="container py-6">
+      <SimNav />
+      {children}
+    </div>
+  );
 }
+

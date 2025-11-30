@@ -26,7 +26,7 @@ function ng(msg: string, status = 500, extra: any = {}) {
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
-    const ym = url.searchParams.get("month") ?? url.searchParams.get("ym") ?? undefined;
+    const ym = url.searchParams.get("month") ?? url.searchParams.get("month") ?? undefined;
     const { start, end, month } = ymRange(ym);
 
     const supabase = getSupabaseServer();

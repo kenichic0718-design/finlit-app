@@ -1,172 +1,207 @@
-'use client';
+// app/learn/stats/_PageClient.tsx
+"use client";
 
-// app/learn/stats/page.tsx
-
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-type TopicRow = { topic: string; solved: number; correct: number };
-type StatsResp =
-  | {
-      ok: true;
-      todaySolved: number;
-      todayCorrect: number;
-      byTopic: TopicRow[];
-      // ここは今は未使用（折れ線グラフ差し替え予定）
-      byDay?: { ymd: string; solved: number; correct: number }[];
-    }
-  | { ok: false; error: string };
+type TopicRow = {
+  topic: string;       // 日本語ラベル（家計管理・サブスク など）
+  correct: number;     // 正解数
+  total: number;       // 解いた数
+  sessions: number;    // 実施回数
+  rate: number;        // 正答率 0〜1
+};
 
-const fmtPct = (num: number) =>
-  Number.isFinite(num) ? `${Math.round(num)}%` : "0%";
+type StatsOk = {
+  ok: true;
+  byTopic: TopicRow[];
+};
 
-export default function LearnStatsPage() {
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [data, setData] = useState<Extract<StatsResp, { ok: true }> | null>(null);
+type StatsError = {
+  ok: false;
+  error: string;
+};
 
-  async function load() {
+type StatsResp = StatsOk | StatsError;
+
+const DAYS = 30;
+
+export default function PageClient() {
+  const [stats, setStats] = useState<StatsOk | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetchStats();
+  }, []);
+
+  async function fetchStats() {
     setLoading(true);
-    setErr(null);
+    setErrorMsg(null);
     try {
-      const res = await fetch("/api/learn/stats?days=30", { cache: "no-store" });
-      const json = (await res.json().catch(() => ({}))) as StatsResp;
-      if (!res.ok || !("ok" in json) || !json.ok) {
-        throw new Error((json as any)?.error || `Failed: ${res.status}`);
+      const res = await fetch(`/api/learn/stats?days=${DAYS}`, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data: StatsResp = await res.json();
+      if (!data.ok) {
+        setStats(null);
+        setErrorMsg((data as StatsError).error ?? "学習成績の取得に失敗しました。");
+      } else {
+        setStats(data);
       }
-      setData(json);
     } catch (e: any) {
-      setErr(e?.message || "統計の取得に失敗しました");
-      setData(null);
+      setStats(null);
+      setErrorMsg(e?.message ?? "学習成績の取得に失敗しました。");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const todayRate = useMemo(() => {
-    if (!data) return 0;
-    const { todaySolved, todayCorrect } = data;
-    if (!todaySolved) return 0;
-    return (todayCorrect / todaySolved) * 100;
-  }, [data]);
+  const { totalSolved, totalCorrect, totalRate } = useMemo(() => {
+    if (!stats) {
+      return { totalSolved: 0, totalCorrect: 0, totalRate: 0 };
+    }
+    const solved = stats.byTopic.reduce((acc, t) => acc + (t.total ?? 0), 0);
+    const correct = stats.byTopic.reduce((acc, t) => acc + (t.correct ?? 0), 0);
+    const rate = solved > 0 ? Math.round((correct / solved) * 100) : 0;
+    return { totalSolved: solved, totalCorrect: correct, totalRate: rate };
+  }, [stats]);
 
   return (
-    <main className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">学習成績</h1>
-        <Link href="/learn" className="text-sm text-blue-300 hover:underline">
-          ← 学ぶへ戻る
+    <main className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-6">
+      {/* ヘッダー：学ぶに戻る ＋ ミニクイズへ */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/learn"
+            className="text-sm text-zinc-400 underline underline-offset-4 hover:text-zinc-100"
+          >
+            ← 学ぶに戻る
+          </Link>
+          <h1 className="text-2xl font-bold text-zinc-50">学習成績</h1>
+        </div>
+        <Link
+          href="/learn/quiz"
+          className="inline-flex items-center gap-2 rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/20"
+        >
+          ミニクイズへ戻る
         </Link>
       </div>
 
-      <div className="flex items-center justify-end">
-        <button
-          onClick={load}
-          className="rounded border border-white/15 px-3 py-1 text-sm hover:bg-white/10 disabled:opacity-50"
-          disabled={loading}
-        >
-          今すぐ更新
-        </button>
-      </div>
+      <p className="text-sm text-zinc-300">
+        直近{DAYS}日分のミニクイズの結果を集計しています。
+      </p>
 
-      {/* エラー */}
-      {err && (
-        <div className="rounded border border-red-400/40 bg-red-400/10 px-3 py-2 text-sm text-red-300">
-          エラー：{err}
+      {errorMsg && (
+        <div className="rounded-xl border border-rose-400/50 bg-rose-950/40 px-4 py-3 text-sm text-rose-100">
+          学習成績の取得に失敗しました：{errorMsg}
         </div>
       )}
 
-      {/* KPI */}
+      {/* サマリーカード */}
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="kpi">
-          <div className="text-xs text-muted">今日 解いた数</div>
-          <div className="mt-1 text-3xl font-bold">
-            {loading ? "…" : data?.todaySolved ?? 0}
+        <div className="rounded-2xl border border-zinc-700/70 bg-zinc-900/70 px-4 py-3">
+          <div className="text-xs text-zinc-400">直近{DAYS}日で解いた問題数</div>
+          <div className="mt-2 text-2xl font-semibold text-zinc-50">
+            {totalSolved}
           </div>
         </div>
-        <div className="kpi">
-          <div className="text-xs text-muted">今日 正答</div>
-          <div className="mt-1 text-3xl font-bold">
-            {loading ? "…" : data?.todayCorrect ?? 0}
+        <div className="rounded-2xl border border-zinc-700/70 bg-zinc-900/70 px-4 py-3">
+          <div className="text-xs text-zinc-400">直近{DAYS}日の正解数</div>
+          <div className="mt-2 text-2xl font-semibold text-zinc-50">
+            {totalCorrect}
           </div>
         </div>
-        <div className="kpi">
-          <div className="text-xs text-muted">今日 正答率</div>
-          <div className="mt-1 text-3xl font-bold">
-            {loading
-              ? "…"
-              : fmtPct(
-                  data && data.todaySolved
-                    ? (data.todayCorrect / data.todaySolved) * 100
-                    : 0
-                )}
+        <div className="rounded-2xl border border-zinc-700/70 bg-zinc-900/70 px-4 py-3">
+          <div className="text-xs text-zinc-400">直近{DAYS}日の正答率</div>
+          <div className="mt-2 text-2xl font-semibold text-zinc-50">
+            {totalRate}%
           </div>
         </div>
       </section>
 
-      {/* 30日集計（グラフ置き場） */}
-      <section className="card">
-        <div className="text-sm font-medium">直近30日の学習回数と正答</div>
-        <div className="mt-2 text-xs text-muted">(グラフは後で差し替え)</div>
+      {/* 更新ボタン */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => void fetchStats()}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-full border border-zinc-600 bg-zinc-900 px-4 py-2 text-xs font-semibold text-zinc-50 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? "更新中…" : "今すぐ更新"}
+        </button>
+      </div>
 
-        {/* 空表示のときに高さ0にならないよう軽いプレースホルダ */}
-        <div className="mt-4 h-28 rounded bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-xs text-muted">
-          プレースホルダ
-        </div>
+      {/* トピック別正答率 */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-zinc-200">トピック別正答率</h2>
+        <p className="text-xs text-zinc-400">
+          解いた回数・正答数・正答率をトピックごとに表示します。
+        </p>
 
-        <div className="mt-2 text-[11px] text-muted">下層=正答、上層=解いた数</div>
-      </section>
-
-      {/* トピック別 正答率 */}
-      <section className="card">
-        <div className="text-sm font-medium mb-3">トピック別 正答率</div>
-
-        {!loading && (!data?.byTopic || data.byTopic.length === 0) && (
-          <div className="text-sm text-muted">データがありません</div>
-        )}
-
-        {loading && <div className="text-sm text-muted">読み込み中…</div>}
-
-        {!!data?.byTopic?.length && (
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted">
-              <tr>
-                <th className="py-2 pr-2">トピック</th>
-                <th className="py-2 pr-2 w-20">解いた数</th>
-                <th className="py-2 pr-2 w-16">正答</th>
-                <th className="py-2 pr-2 w-16">正答率</th>
-                <th className="py-2">指標</th>
+        <div className="overflow-x-auto rounded-2xl border border-zinc-700/70 bg-zinc-950/40">
+          <table className="min-w-full text-left text-xs text-zinc-200">
+            <thead>
+              <tr className="border-b border-zinc-700/60 bg-zinc-900/60">
+                <th className="px-4 py-2 font-semibold">トピック</th>
+                <th className="px-4 py-2 font-semibold">解いた数</th>
+                <th className="px-4 py-2 font-semibold">正答</th>
+                <th className="px-4 py-2 font-semibold">正答率</th>
+                <th className="px-4 py-2 font-semibold">指標</th>
               </tr>
             </thead>
             <tbody>
-              {data.byTopic.map((r) => {
-                const rate =
-                  r.solved > 0 ? Math.round((r.correct / r.solved) * 100) : 0;
+              {(stats?.byTopic ?? []).map((row, idx) => {
+                const solved = row.total ?? 0;
+                const correct = row.correct ?? 0;
+                const ratePct =
+                  solved > 0 ? Math.round((correct / solved) * 100) : 0;
+
                 return (
-                  <tr key={r.topic} className="border-t border-line">
-                    <td className="py-2 pr-2">{r.topic}</td>
-                    <td className="py-2 pr-2">{r.solved}</td>
-                    <td className="py-2 pr-2">{r.correct}</td>
-                    <td className="py-2 pr-2">{fmtPct(rate)}</td>
-                    <td className="py-2">
-                      <div className="h-2 w-full rounded bg-white/5 ring-1 ring-white/10">
+                  <tr
+                    key={`${row.topic}-${idx}`}
+                    className="border-t border-zinc-800/70"
+                  >
+                    <td className="px-4 py-2">{row.topic}</td>
+                    <td className="px-4 py-2">{solved}</td>
+                    <td className="px-4 py-2">{correct}</td>
+                    <td className="px-4 py-2">{ratePct}%</td>
+                    <td className="px-4 py-2">
+                      <div className="h-1.5 w-32 rounded-full bg-zinc-800">
                         <div
-                          className="h-2 rounded bg-brand"
-                          style={{ width: `${Math.min(100, rate)}%` }}
+                          className="h-1.5 rounded-full bg-emerald-500"
+                          style={{ width: `${Math.min(ratePct, 100)}%` }}
                         />
                       </div>
                     </td>
                   </tr>
                 );
               })}
+
+              {(!stats || stats.byTopic.length === 0) && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-6 text-center text-xs text-zinc-400"
+                  >
+                    まだミニクイズの履歴がありません。まずは
+                    <Link
+                      href="/learn/quiz"
+                      className="text-emerald-300 underline underline-offset-4"
+                    >
+                      ミニクイズ
+                    </Link>
+                    から解いてみましょう。
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        )}
+        </div>
       </section>
     </main>
   );
 }
+

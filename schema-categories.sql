@@ -1,1 +1,0 @@
-pbpaste > schema-categories.sql

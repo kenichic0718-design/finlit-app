@@ -1,38 +1,23 @@
-// components/AuthUrlHandler.tsx
-"use client";
-import { useEffect } from "react";
-import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import { getSupabaseClient } from "@/lib/supabase/client";
+'use client';
+
+import { useEffect } from 'react';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 export default function AuthUrlHandler() {
-  const sp = useSearchParams();
-  const pathname = usePathname();
-  const router = useRouter();
-
   useEffect(() => {
-    const code = sp.get("code");
-    if (!code) return;
+    const supabase = getSupabaseBrowser();
 
-    // 既に /auth/callback ならサーバー側に任せる
-    if (pathname.startsWith("/auth/callback")) return;
+    // 初回に現在の状態を拾っておく（ハッシュに access_token があれば SDK が処理）
+    supabase.auth.getSession().catch(() => {});
 
-    (async () => {
-      const supabase = getSupabaseClient();
-      try {
-        // クライアント側でセッションを確立（保険）
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          // 失敗したらサーバールートに回す
-          router.replace(`/auth/callback?code=${encodeURIComponent(code)}&redirect_to=/settings`);
-        } else {
-          router.replace("/settings");
-        }
-      } catch {
-        router.replace(`/auth/callback?code=${encodeURIComponent(code)}&redirect_to=/settings`);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sp, pathname]);
+    // 状態の変化を拾っておく（必要ならリロードや遷移に使う）
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, _session) => {
+      // ここで必要なら Router でリダイレクトする
+      // 例: if (session) router.replace('/settings')
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   return null;
 }

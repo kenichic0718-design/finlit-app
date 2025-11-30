@@ -1,23 +1,38 @@
 // components/LogoutButton.tsx
 'use client';
 
-import { createClient } from '@supabase/supabase-js';
+import { useRouter } from 'next/navigation';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
+import { useState } from 'react';
+import { toast } from '@/app/_utils/toast';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+export default function LogoutButton({ className = '' }: { className?: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
-export default function LogoutButton() {
+  const onLogout = async () => {
+    setLoading(true);
+    try {
+      const supabase = getSupabaseBrowser();
+      await supabase.auth.signOut();
+      toast('ログアウトしました', 'success');
+      // 戻るで保護ページに戻れないように replace
+      router.replace('/login');
+      router.refresh();
+    } catch (e) {
+      toast('ログアウトに失敗しました。リロードして再試行してください。', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <button
-      className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
-      onClick={async () => {
-        await supabase.auth.signOut();
-        location.href = '/login';
-      }}
+      onClick={onLogout}
+      disabled={loading}
+      className={`rounded px-3 py-2 border hover:bg-zinc-50 disabled:opacity-60 ${className}`}
     >
-      Sign out
+      {loading ? '処理中…' : 'ログアウト'}
     </button>
   );
 }

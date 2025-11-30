@@ -8,7 +8,7 @@ export const LOGS_TABLE = 'logs' as const;
 export type LogsRow = {
   "id": number;
   "profile_id": string | null;
-  "date": string | null;
+  "occurred_at": string | null;
   "category": string | null;
   "amount": number;
   "memo": string | null;
