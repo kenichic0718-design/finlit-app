@@ -3,10 +3,16 @@
 
 import * as React from 'react';
 import { fetchJson } from '@/app/_utils/fetchJson';
-import type { Category } from '@/types/category';
 import { toast } from '@/app/_utils/toast';
 
 type Kind = 'income' | 'expense';
+
+type Category = {
+  id: string;
+  name: string;
+  kind: Kind;
+  position: number | null;
+};
 
 export default function SettingsCategories() {
   const [kind, setKind] = React.useState<Kind>('expense');
@@ -89,14 +95,14 @@ export default function SettingsCategories() {
     const target = items[idx];
 
     let newPos = target.position;
-    if (kindOp === 'up') newPos = Math.max(0, target.position - 5);
-    if (kindOp === 'down') newPos = target.position + 5;
+    if (kindOp === 'up') newPos = Math.max(0, (target.position ?? 0) - 5);
+    if (kindOp === 'down') newPos = (target.position ?? 0) + 5;
     if (kindOp === 'top') {
-      const minPos = Math.min(...items.map((c) => c.position));
+      const minPos = Math.min(...items.map((c) => c.position ?? 0));
       newPos = Math.max(0, minPos - 10);
     }
     if (kindOp === 'bottom') {
-      const maxPos = Math.max(...items.map((c) => c.position));
+      const maxPos = Math.max(...items.map((c) => c.position ?? 0));
       newPos = maxPos + 10;
     }
 
@@ -168,7 +174,9 @@ export default function SettingsCategories() {
 }
 
 function sorter(a: Category, b: Category) {
-  if (a.position !== b.position) return a.position - b.position;
+  if ((a.position ?? 0) !== (b.position ?? 0)) {
+    return (a.position ?? 0) - (b.position ?? 0);
+  }
   return a.name.localeCompare(b.name);
 }
 
