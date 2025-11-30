@@ -6,7 +6,7 @@ import { headers } from 'next/headers';
  * - RSC/Route Handler で使用可能（headers() 利用）
  * - Vercel などのプロキシ環境では X-Forwarded-* を優先
  */
-function toAbsolute(input: string): string {
+async function toAbsolute(input: string): Promise<string> {
   // すでに絶対 URL ならそのまま
   try {
     // eslint-disable-next-line no-new
@@ -16,7 +16,8 @@ function toAbsolute(input: string): string {
     /* not absolute */
   }
 
-  const h = headers();
+  // Next 15 以降 headers() が Promise<ReadonlyHeaders> になったので await 必須
+  const h = await headers();
   const host =
     h.get('x-forwarded-host') ??
     h.get('host') ??
@@ -42,7 +43,8 @@ async function safeText(r: Response) {
  * - キャッシュは無効化（最新を取得）
  */
 export async function getJSON<T>(url: string, init: RequestInit = {}): Promise<T> {
-  const r = await fetch(toAbsolute(url), {
+  const abs = await toAbsolute(url);
+  const r = await fetch(abs, {
     ...init,
     cache: 'no-store',
   });
@@ -58,7 +60,8 @@ export async function postJSON<T>(
   body: unknown,
   init: RequestInit = {}
 ): Promise<T> {
-  const r = await fetch(toAbsolute(url), {
+  const abs = await toAbsolute(url);
+  const r = await fetch(abs, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -80,7 +83,8 @@ export async function patchJSON<T>(
   body: unknown,
   init: RequestInit = {}
 ): Promise<T> {
-  const r = await fetch(toAbsolute(url), {
+  const abs = await toAbsolute(url);
+  const r = await fetch(abs, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -98,7 +102,8 @@ export async function patchJSON<T>(
 }
 
 export async function delJSON<T>(url: string, init: RequestInit = {}): Promise<T> {
-  const r = await fetch(toAbsolute(url), {
+  const abs = await toAbsolute(url);
+  const r = await fetch(abs, {
     method: 'DELETE',
     cache: 'no-store',
     ...init,
@@ -109,4 +114,3 @@ export async function delJSON<T>(url: string, init: RequestInit = {}): Promise<T
   }
   return (await r.json()) as T;
 }
-
