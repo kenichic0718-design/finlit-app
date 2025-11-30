@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 // このAPI内で完結する ensureProfile
 async function ensureProfileLocal() {
-  const store = cookies();
+  const store = await cookies(); // ★ここだけ変更
   let vid = store.get("vid")?.value || store.get("finlit_vid")?.value;
 
   if (!vid) {
