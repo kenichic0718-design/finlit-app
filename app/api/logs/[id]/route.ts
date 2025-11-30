@@ -5,12 +5,23 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: { id: string } }
+  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
 ) {
+  // Next.js 15 の ctx.params が Promise でもそうでなくても対応できるようにする
+  const params =
+    'params' in ctx && typeof (ctx as any).params?.then === 'function'
+      ? await (ctx as any).params
+      : (ctx as any).params
+
   const id = params.id
   const supabase = createRouteHandlerClient({ cookies })
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   // 自分の行だけ削除
   const { error } = await supabase
@@ -19,7 +30,12 @@ export async function DELETE(
     .eq('id', id)
     .eq('profile_id', user.id)
 
-  if (error) return NextResponse.json({ error: 'logs delete failed', detail: error.message }, { status: 400 })
+  if (error) {
+    return NextResponse.json(
+      { error: 'logs delete failed', detail: error.message },
+      { status: 400 }
+    )
+  }
+
   return NextResponse.json({ ok: true })
 }
-
