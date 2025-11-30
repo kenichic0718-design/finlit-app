@@ -4,6 +4,7 @@ import type { Metadata, Viewport } from "next";
 import TopNav from "@/components/TopNav";
 import RequiredGate from "@/components/RequiredGate";
 import AppClientShell from "@/components/AppClientShell";
+import ProfileInitClient from "@/components/ProfileInitClient";
 
 export const metadata: Metadata = {
   title: "FinLit PWA",
@@ -27,6 +28,8 @@ export default function RootLayout({
     <html lang="ja">
       <body>
         <RequiredGate>
+          {/* ログインチェックを通過したタイミングで、プロフィール＆カテゴリ初期化を1回だけ実行 */}
+          <ProfileInitClient />
           <AppClientShell>
             <TopNav />
             {children}
@@ -36,4 +39,3 @@ export default function RootLayout({
     </html>
   );
 }
-
