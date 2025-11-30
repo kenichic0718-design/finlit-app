@@ -39,3 +39,43 @@ export function fromMonthParam(q?: string | null): Date {
 
   return new Date(y, m - 1, 1);
 }
+
+// ==============================
+// 旧 API との互換用ヘルパー
+// ==============================
+
+export type Ym = {
+  year: number;
+  month: number; // 1-12
+};
+
+/**
+ * YYYY-MM / YYYYMM / 未指定 から Ym を返す。
+ * 無効値の場合は「今日の年月」にフォールバック。
+ */
+export function parseYm(value?: string | null): Ym {
+  if (!value) {
+    return todayYm();
+  }
+
+  const compact = value.includes("-") ? value.replace("-", "") : value;
+  const y = Number(compact.slice(0, 4));
+  const m = Number(compact.slice(4, 6));
+
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+    return todayYm();
+  }
+
+  return { year: y, month: m };
+}
+
+/** 今日の年月を Ym で返す */
+export function todayYm(): Ym {
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+}
+
+/** Ym から "YYYY-MM" 形式の文字列を返す */
+export function ymToString(ym: Ym): string {
+  return `${ym.year}-${String(ym.month).padStart(2, "0")}`;
+}
