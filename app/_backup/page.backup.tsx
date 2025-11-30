@@ -1,4 +1,4 @@
-"use client";
+// @ts-nocheck
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/_supabase"; // ←必要に応じてパス調整
