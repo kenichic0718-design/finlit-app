@@ -27,7 +27,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const cookieStore = cookies();
+    // ★ ここだけ修正：await を付ける
+    const cookieStore = await cookies();
+
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
@@ -74,4 +76,3 @@ export async function POST(req: Request) {
     );
   }
 }
-
