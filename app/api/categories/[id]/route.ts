@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 // PATCH /api/categories/:id
 // body: { name?: string; order_index?: number; isActive?: boolean }
-export async function PATCH(req: Request, ctx: { params: { id: string } }) {
+export async function PATCH(req: Request, ctx: any) {
   try {
     if (!envReady()) {
       return NextResponse.json(
@@ -70,7 +70,7 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
 }
 
 // DELETE /api/categories/:id
-export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
+export async function DELETE(_req: Request, ctx: any) {
   try {
     if (!envReady()) {
       return NextResponse.json(
@@ -92,4 +92,3 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
     );
   }
 }
-
