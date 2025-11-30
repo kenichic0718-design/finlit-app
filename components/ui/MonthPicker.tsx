@@ -1,5 +1,11 @@
 // components/ui/MonthPicker.tsx
-export default function MonthPicker({ ym, setYm }: { month: string; setYm: (s: string) => void }) {
+
+type MonthPickerProps = {
+  ym: string;
+  setYm: (s: string) => void;
+};
+
+export default function MonthPicker({ ym, setYm }: MonthPickerProps) {
   return (
     <input
       type="month"
@@ -9,4 +15,3 @@ export default function MonthPicker({ ym, setYm }: { month: string; setYm: (s: s
     />
   );
 }
-
