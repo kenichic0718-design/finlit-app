@@ -1,4 +1,5 @@
-import { supabase } from "./supabase";
+// lib/categories.ts
+import { createBrowserClient } from "@supabase/ssr";
 
 export type Category = {
   id: string;
@@ -8,7 +9,16 @@ export type Category = {
   sort_order: number | null;
 };
 
+function getSupabase() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+
 export async function getMyCategories(): Promise<Category[]> {
+  const supabase = getSupabase();
+
   // RLS で自分の profile_id のみ見える想定。明示フィルタ不要。
   const { data, error } = await supabase
     .from("categories")
@@ -20,4 +30,3 @@ export async function getMyCategories(): Promise<Category[]> {
   if (error) throw error;
   return (data ?? []) as Category[];
 }
-
