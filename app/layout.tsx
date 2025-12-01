@@ -10,13 +10,15 @@ export const metadata: Metadata = {
   title: "FinLit PWA",
   description:
     "大学生のための家計管理・ミニクイズ・シミュレーションで金融リテラシーを学べる Web アプリ",
-  themeColor: "#0f766e",
+  // ★ テーマカラーを黒に変更
+  themeColor: "#000000",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#0f766e",
+  // ★ こちらも黒に揃える
+  themeColor: "#000000",
 };
 
 export default function RootLayout({
