@@ -80,18 +80,24 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
-      console.error("[/api/telemetry] insert error", error);
-      return jsonError(500, "insert_failed", error.message);
+      // ★ ここで 500 を返さず、ログだけ出して成功扱いにする
+      console.error("[/api/telemetry] insert error (ignored for UX)", error);
+      return NextResponse.json(
+        { ok: false, error: "insert_failed" },
+        { status: 200 },
+      );
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err: any) {
-    console.error("[/api/telemetry] unexpected error", err);
-    return jsonError(
-      500,
-      "unexpected_error",
-      err?.message ?? "予期せぬエラーが発生しました。",
+    console.error("[/api/telemetry] unexpected error (ignored for UX)", err);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "unexpected_error",
+        detail: err?.message ?? "予期せぬエラーが発生しました。",
+      },
+      { status: 200 },
     );
   }
 }
-
