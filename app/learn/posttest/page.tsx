@@ -18,7 +18,26 @@ export default async function PosttestPage() {
     redirect("/login");
   }
 
-  // すでに事後テストを受けているか確認（1人1回・mode = 'post'）
+  // ① 事前テスト（mode = 'pre'）を受けているか確認
+  const { count: preCount, error: preCountError } = await supabase
+    .from("exam_results")
+    .select("id", { count: "exact", head: true })
+    .eq("profile_id", user.id)
+    .eq("mode", "pre");
+
+  if (preCountError) {
+    console.error("[posttest] exam_results pre-count error:", preCountError);
+  }
+
+  const hasPre = (preCount ?? 0) > 0;
+
+  // 事前テスト未受験なら、事後テストは受けさせない
+  if (!hasPre) {
+    // 事前テストページへ誘導（ルーティング構造より /learn/pretest を想定）
+    redirect("/learn/pretest");
+  }
+
+  // ② すでに事後テストを受けているか確認（1人1回・mode = 'post'）
   const { count, error: countError } = await supabase
     .from("exam_results")
     .select("id", { count: "exact", head: true })
@@ -26,7 +45,7 @@ export default async function PosttestPage() {
     .eq("mode", "post");
 
   if (countError) {
-    console.error("[posttest] exam_results count error:", countError);
+    console.error("[posttest] exam_results post-count error:", countError);
   }
 
   const alreadyTaken = (count ?? 0) > 0;
@@ -66,7 +85,26 @@ export default async function PosttestPage() {
 
     if (!user || userError) return;
 
-    // ここでも 1人1回 を保証
+    // 念のためここでも事前テスト受験を確認（直接呼び出し対策）
+    const { count: preCountInner, error: preCountInnerError } = await supabase
+      .from("exam_results")
+      .select("id", { count: "exact", head: true })
+      .eq("profile_id", user.id)
+      .eq("mode", "pre");
+
+    if (preCountInnerError) {
+      console.error(
+        "[posttest] insert-side pre-count error:",
+        preCountInnerError,
+      );
+    }
+
+    if ((preCountInner ?? 0) === 0) {
+      // 事前テスト未受験なら何も保存しない
+      return;
+    }
+
+    // ここでも 1人1回 を保証（mode = 'post'）
     const { count, error: countError } = await supabase
       .from("exam_results")
       .select("id", { count: "exact", head: true })
@@ -74,7 +112,7 @@ export default async function PosttestPage() {
       .eq("mode", "post");
 
     if (countError) {
-      console.error("[posttest] insert-side count error:", countError);
+      console.error("[posttest] insert-side post-count error:", countError);
     }
 
     if ((count ?? 0) > 0) {
@@ -87,7 +125,7 @@ export default async function PosttestPage() {
         mode: "post",
         score,
         total,
-        detail_json: details, // ★ ここに JSONB で保存
+        detail_json: details, // ★ JSONB で保存
       },
     ]);
 
@@ -99,4 +137,3 @@ export default async function PosttestPage() {
   // 事後テストでは、ExamClient 側でスコア表示あり
   return <ExamClient mode="post" kind="post" onFinish={handleFinish} />;
 }
-
