@@ -1,7 +1,7 @@
 // middleware.ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 /**
  * Supabase のセッションを見て、
@@ -9,9 +9,31 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
  * - ログイン済みで /login → next or /
  * を制御する middleware。
  *
- * Cookie の get/set は @supabase/ssr 公式のパターンに沿って実装。
+ * 追加で、
+ * - /login?code=... や /login?token_hash=... で来た場合は
+ *   /auth/callback 側の Route Handler にバイパスする。
  */
 export async function middleware(req: NextRequest) {
+  const path = req.nextUrl.pathname;
+
+  // ❶ Supabase からのメールリンクが /login?code=... で来た場合のハンドリング
+  if (path.startsWith("/login")) {
+    const url = req.nextUrl;
+    const code = url.searchParams.get("code");
+    const tokenHash = url.searchParams.get("token_hash");
+    const errorDesc = url.searchParams.get("error_description");
+
+    // code / token_hash / error_description のどれかが付いていたら
+    // /auth/callback にそのままクエリを引き継いで転送する
+    if (code || tokenHash || errorDesc) {
+      const callbackUrl = url.clone();
+      callbackUrl.pathname = "/auth/callback";
+      return NextResponse.redirect(callbackUrl);
+    }
+  }
+
+  // ❷ ここから従来の認証チェック
+
   // Cookie 書き戻し用のレスポンス（ヘッダを引き継ぐ）
   const res = NextResponse.next({
     request: {
@@ -35,7 +57,7 @@ export async function middleware(req: NextRequest) {
       remove(name: string, options: CookieOptions) {
         res.cookies.set({
           name,
-          value: '',
+          value: "",
           ...options,
           maxAge: 0,
         });
@@ -48,24 +70,21 @@ export async function middleware(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const path = req.nextUrl.pathname;
-
   // ログインページと callback は常に許可
   const isPublic =
-    path.startsWith('/login') ||
-    path.startsWith('/auth/callback');
+    path.startsWith("/login") || path.startsWith("/auth/callback");
 
   // 未ログインで保護ページ → /login へ
   if (!user && !isPublic) {
     const loginUrl = req.nextUrl.clone();
-    loginUrl.pathname = '/login';
-    loginUrl.searchParams.set('next', path);
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set("next", path);
     return NextResponse.redirect(loginUrl);
   }
 
   // ログイン済みで /login → next へ
-  if (user && path.startsWith('/login')) {
-    const dest = req.nextUrl.searchParams.get('next') || '/';
+  if (user && path.startsWith("/login")) {
+    const dest = req.nextUrl.searchParams.get("next") || "/";
     return NextResponse.redirect(new URL(dest, req.url));
   }
 
@@ -77,7 +96,7 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     // 静的ファイル & API & callback は完全除外
-    '/((?!_next/static|_next/image|favicon.ico|robots.txt|manifest.webmanifest|icons|images|api|auth/callback).*)',
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|manifest.webmanifest|icons|images|api|auth/callback).*)",
   ],
 };
 
