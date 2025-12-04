@@ -6,14 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 /**
- * Supabase のメールリンクから戻ってきたときのコールバックページ。
+ * Magic Link クリック後に来るコールバックページ
  *
- * ポイント：
- * - supabaseBrowser()（@supabase/ssr の createBrowserClient）を生成するだけで
- *   URL ハッシュに含まれている access_token / refresh_token を検出して
- *   自動的にセッションを保存してくれる（detectSessionInUrl）。
- * - その後、auth.getSession() でセッションが取れるか確認し、
- *   OK なら next へ、ダメなら /login に戻す。
+ * - supabaseBrowser() を生成したタイミングで detectSessionInUrl が走り、
+ *   URL ハッシュにあるトークンからセッションが保存される
+ * - その後 auth.getSession() でセッションがあるか確認して next へ
  */
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -24,10 +21,8 @@ export default function AuthCallbackPage() {
 
     const run = async () => {
       try {
-        // ここで Supabase Browser Client を生成 → detectSessionInUrl が走る
         const supabase = supabaseBrowser();
 
-        // URL からのセッション検出が終わったあと、実際にセッションがあるか確認
         const { data, error } = await supabase.auth.getSession();
 
         if (error || !data.session) {
@@ -41,14 +36,11 @@ export default function AuthCallbackPage() {
           return;
         }
 
-        // セッション取得成功 → next へ
         router.replace(next);
       } catch (e) {
         console.error("[auth/callback] unexpected error:", e);
         router.replace(
-          `/login?error=callback_failed&next=${encodeURIComponent(
-            next
-          )}`
+          `/login?error=callback_failed&next=${encodeURIComponent(next)}`
         );
       }
     };
