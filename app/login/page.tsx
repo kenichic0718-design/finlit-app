@@ -1,16 +1,20 @@
 // app/login/page.tsx
-'use client';
+"use client";
 
-import { useState, useTransition } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useState, useTransition } from "react";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
+
+// Supabase のブラウザクライアント（@supabase/ssr ベース）
+// - 他の lib/logs.ts などと同じ createBrowserClient を使用
+// - サーバ側の createServerClient（middleware / supabaseServer）と
+//   Cookie 形式が完全に揃う
+const supabase = supabaseBrowser();
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
-
-  const supabase = createClientComponentClient();
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,13 +23,21 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams(window.location.search);
-      const next = params.get('next') || '/';
-      const callback = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const next = params.get("next") || "/";
+      const callback = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
+        next,
+      )}`;
 
+      // ★ ここがポイント：
+      //   - 以前は createClientComponentClient(@supabase/auth-helpers-nextjs)
+      //   - 今回から supabaseBrowser(@supabase/ssr) に統一
+      //   → middleware / auth/callback / supabaseServer と同じ
+      //     Cookie・セッション形式になる
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: callback },
       });
+
       if (error) throw error;
       setSent(true);
     } catch (err) {
