@@ -6,12 +6,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 /**
- * Magic Link クリック後に来るコールバックページ
+ * Supabase のメールリンクから戻ってきたときのコールバックページ。
  *
- * - URL（クエリ or ハッシュ）に含まれるトークンを Supabase に渡して
- *   セッションを保存してもらう（= Cookie にも反映される）
- * - 成功したら next パラメータ or "/" にリダイレクト
- * - 失敗したら /login に戻す
+ * ポイント：
+ * - supabaseBrowser()（@supabase/ssr の createBrowserClient）を生成するだけで
+ *   URL ハッシュに含まれている access_token / refresh_token を検出して
+ *   自動的にセッションを保存してくれる（detectSessionInUrl）。
+ * - その後、auth.getSession() でセッションが取れるか確認し、
+ *   OK なら next へ、ダメなら /login に戻す。
  */
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -19,39 +21,45 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const next = searchParams.get("next") ?? "/";
-    const supabase = supabaseBrowser();
 
-    (async () => {
+    const run = async () => {
       try {
-        // 型定義上は getSessionFromUrl が見えないので any キャストで呼ぶ
-        const { data, error } = await (supabase.auth as any).getSessionFromUrl({
-          storeSession: true,
-        });
+        // ここで Supabase Browser Client を生成 → detectSessionInUrl が走る
+        const supabase = supabaseBrowser();
 
-        if (error) {
-          console.error("[auth/callback] getSessionFromUrl error:", error);
-          router.replace("/login?error=callback_failed");
+        // URL からのセッション検出が終わったあと、実際にセッションがあるか確認
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error || !data.session) {
+          console.error(
+            "[auth/callback] session not found after redirect:",
+            error
+          );
+          router.replace(
+            `/login?error=callback_failed&next=${encodeURIComponent(next)}`
+          );
           return;
         }
 
-        if (!data?.session) {
-          console.error("[auth/callback] no session returned");
-          router.replace("/login?error=missing_session");
-          return;
-        }
-
-        // セッション保存に成功したので、元のページ or ダッシュボードへ
+        // セッション取得成功 → next へ
         router.replace(next);
       } catch (e) {
         console.error("[auth/callback] unexpected error:", e);
-        router.replace("/login?error=callback_failed");
+        router.replace(
+          `/login?error=callback_failed&next=${encodeURIComponent(
+            next
+          )}`
+        );
       }
-    })();
+    };
+
+    run();
   }, [router, searchParams]);
 
   return (
-    <main className="min-h-screen flex items-center justify-center">
-      <p>ログイン処理中です。少々お待ちください…</p>
+    <main className="mx-auto max-w-xl px-4 py-10">
+      <h1 className="text-2xl font-semibold mb-4">ログイン処理中です</h1>
+      <p>しばらくお待ちください...</p>
     </main>
   );
 }
