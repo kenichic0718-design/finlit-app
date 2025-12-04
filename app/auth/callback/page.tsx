@@ -1,47 +1,60 @@
 // app/auth/callback/page.tsx
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { supabaseBrowser } from '@/lib/supabaseBrowser';
 
 /**
- * メールのマジックリンクから戻ってきたときのコールバックページ。
+ * Magic Link クリック後に来るコールバックページ
  *
- * - URL（クエリ + #フラグメント）からセッション情報を取り出して保存
- * - 保存が終わったら next パラメータ、なければ "/" へリダイレクト
- *
- * → サーバ側で code を扱わず、公式の email OTP フローに合わせる。
+ * - URL（クエリ or ハッシュ）に含まれるトークンを Supabase に渡して
+ *   セッションを保存してもらう（= Cookie にも反映される）
+ * - 成功したら next パラメータ or "/" にリダイレクト
+ * - 失敗したら /login に戻す
  */
 export default function AuthCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") ?? "/";
 
   useEffect(() => {
-    const run = async () => {
-      const supabase = supabaseBrowser();
+    const supabase = supabaseBrowser();
+    const next = searchParams.get('next') ?? '/';
 
+    (async () => {
       try {
-        // メールリンク由来のトークンを URL から読み取り、セッションを保存
-        await supabase.auth.getSessionFromUrl({ storeSession: true });
-      } catch (error) {
-        // 失敗しても、とりあえず next へ飛ばす（/api 側で未ログイン扱いになるだけ）
-        console.error("[auth/callback] getSessionFromUrl error:", error);
-      } finally {
-        router.replace(nextPath);
-      }
-    };
+        // ※ supabase-js v2 では型定義には出ていませんが、
+        //    ランタイムには getSessionFromUrl が存在します。
+        //    Magic Link / パスワードレス用のヘルパーです。
+        // @ts-expect-error: getSessionFromUrl is available at runtime
+        const { data, error } = await (supabase.auth as any).getSessionFromUrl({
+          storeSession: true,
+        });
 
-    run();
-  }, [router, nextPath]);
+        if (error) {
+          console.error('[auth/callback] getSessionFromUrl error:', error);
+          router.replace('/login?error=callback_failed');
+          return;
+        }
+
+        if (!data?.session) {
+          console.error('[auth/callback] no session returned');
+          router.replace('/login?error=missing_session');
+          return;
+        }
+
+        // セッション保存に成功したので、元のページ or ダッシュボードへ
+        router.replace(next);
+      } catch (e) {
+        console.error('[auth/callback] unexpected error:', e);
+        router.replace('/login?error=callback_failed');
+      }
+    })();
+  }, [router, searchParams]);
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-10">
-      <h1 className="text-2xl font-semibold mb-4">ログイン処理中...</h1>
-      <p className="text-sm text-neutral-300">
-        数秒待っても画面が切り替わらない場合は、ブラウザの更新ボタンを押してください。
-      </p>
+    <main className="min-h-screen flex items-center justify-center">
+      <p>ログイン処理中です。少々お待ちください…</p>
     </main>
   );
 }
