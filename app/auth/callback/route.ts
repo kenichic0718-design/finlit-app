@@ -1,41 +1,78 @@
 // app/auth/callback/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-
 /**
- * Supabase の Magic Link / OTP から戻ってきたときに
- * `code` をセッション Cookie に交換し、その後アプリ内のページへ
- * リダイレクトするための Route Handler。
+ * Supabase Magic Link / OTP コールバック
  *
- * Cookie の扱いは @supabase/auth-helpers-nextjs に任せる。
+ * - /login から signInWithOtp(emailRedirectTo=/auth/callback?next=...) で飛んでくる
+ * - クエリパラメータの code を Supabase に渡してセッションを確立
+ * - Cookie は @supabase/ssr の createServerClient で発行し、
+ *   middleware.ts / lib/supabaseServer.ts とフォーマットを統一する
  */
+
+import { NextRequest, NextResponse } from "next/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
+
+  // PKCE 付き Magic Link では code クエリが付与される
   const code = url.searchParams.get("code");
+  const next = url.searchParams.get("next") ?? "/";
 
-  // code が無い場合は素直に /login へ戻す
+  // code が無いアクセス（直接叩かれたなど）はログイン画面へ
   if (!code) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    return NextResponse.redirect(
+      new URL("/login?error=missing_code", url.origin),
+    );
   }
 
-  // Supabase クライアント（Cookie 管理込み）
-  const supabase = createRouteHandlerClient({ cookies });
+  // 最終的にリダイレクトしたい先（ダッシュボードなど）
+  const redirectTarget = new URL(next, url.origin);
+  const res = NextResponse.redirect(redirectTarget);
 
-  // code → セッションに交換
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  // ここで @supabase/ssr の client を作り、Cookie の読み書きを
+  // NextRequest / NextResponse 経由で行う
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return req.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          // ブラウザに返すレスポンス側の Cookie だけ更新すれば十分
+          res.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          res.cookies.set({
+            name,
+            value: "",
+            ...options,
+            maxAge: 0,
+          });
+        },
+      },
+    },
+  );
 
-  if (error) {
-    console.error("Auth callback error:", error);
-    const errorUrl = new URL("/login", req.url);
-    errorUrl.searchParams.set("error", "auth");
-    return NextResponse.redirect(errorUrl);
+  try {
+    // code をセッションに交換して Cookie を発行
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error) {
+      console.error("[auth/callback] exchangeCodeForSession error:", error.message);
+      return NextResponse.redirect(
+        new URL("/login?error=callback", url.origin),
+      );
+    }
+  } catch (e) {
+    console.error("[auth/callback] unexpected error:", e);
+    return NextResponse.redirect(
+      new URL("/login?error=callback", url.origin),
+    );
   }
 
-  // next が付いていたら優先してそちらへ、なければ `/`
-  const next = url.searchParams.get("next") || "/";
-  const redirectUrl = new URL(next, req.url);
-
-  return NextResponse.redirect(redirectUrl);
+  // セッション確立済みの Cookie を付けて next 先へ
+  return res;
 }
 
