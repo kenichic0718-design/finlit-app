@@ -1,12 +1,14 @@
 // app/auth/callback/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 
 /**
  * Supabase の Magic Link / OTP から戻ってきたときに
  * `code` をセッション Cookie に交換し、その後アプリ内のページへ
  * リダイレクトするための Route Handler。
+ *
+ * Cookie の扱いは @supabase/auth-helpers-nextjs に任せる。
  */
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -17,25 +19,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  const cookieStore = cookies();
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          cookieStore.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          cookieStore.set({ name, value: "", ...options, maxAge: 0 });
-        },
-      },
-    }
-  );
+  // Supabase クライアント（Cookie 管理込み）
+  const supabase = createRouteHandlerClient({ cookies });
 
   // code → セッションに交換
   const { error } = await supabase.auth.exchangeCodeForSession(code);
