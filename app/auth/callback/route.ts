@@ -1,86 +1,56 @@
 // app/auth/callback/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import type { Database } from "@/lib/database.types";
 
 /**
- * Supabase のマジックリンク / メールリンクから戻ってきたときに、
- * code / token_hash をセッションに交換して Cookie を張る Route Handler。
- *
- * - /auth/callback?code=...&next=/foo
- * - /auth/callback?token_hash=...&next=/foo
- * の両方に対応。
- *
- * middleware.ts / supabaseServer.ts と同じく @supabase/ssr を使うことで、
- * Cookie の形式・プロジェクト設定を完全に統一する。
+ * Supabase の Magic Link / OTP から戻ってきたときに
+ * `code` をセッション Cookie に交換し、その後アプリ内のページへ
+ * リダイレクトするための Route Handler。
  */
 export async function GET(req: NextRequest) {
-  const requestUrl = new URL(req.url);
+  const url = new URL(req.url);
+  const code = url.searchParams.get("code");
 
-  const nextPath = requestUrl.searchParams.get("next") || "/";
-  const code = requestUrl.searchParams.get("code");
-  const tokenHash = requestUrl.searchParams.get("token_hash");
-  const errorDesc = requestUrl.searchParams.get("error_description");
-
-  // Supabase 側のエラーが明示されている場合はログインに戻す
-  if (errorDesc) {
-    console.error("[auth/callback] error_description:", errorDesc);
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("next", nextPath);
-    return NextResponse.redirect(loginUrl);
+  // code が無い場合は素直に /login へ戻す
+  if (!code) {
+    return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // middleware / supabaseServer と同じ Cookie 共有領域
-  const cookieStore = cookies() as any;
+  const cookieStore = cookies();
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-  const supabase = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: any) {
+          cookieStore.set({ name, value, ...options });
+        },
+        remove(name: string, options: any) {
+          cookieStore.set({ name, value: "", ...options, maxAge: 0 });
+        },
       },
-      set(name: string, value: string, options: CookieOptions) {
-        cookieStore.set({ name, value, ...options });
-      },
-      remove(name: string, options: CookieOptions) {
-        cookieStore.set({ name, value: "", ...options, maxAge: 0 });
-      },
-    },
-  });
+    }
+  );
 
-  let authError: unknown = null;
+  // code → セッションに交換
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-  // 新方式: ?code=...（PKCE）
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    authError = error;
-  }
-  // 旧方式: ?token_hash=...（verifyOtp）
-  else if (tokenHash) {
-    const { error } = await supabase.auth.verifyOtp({
-      type: "email",
-      token_hash: tokenHash,
-    });
-    authError = error;
-  } else {
-    // どちらも無い → ログインへ戻す
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("next", nextPath);
-    return NextResponse.redirect(loginUrl);
+  if (error) {
+    console.error("Auth callback error:", error);
+    const errorUrl = new URL("/login", req.url);
+    errorUrl.searchParams.set("error", "auth");
+    return NextResponse.redirect(errorUrl);
   }
 
-  if (authError) {
-    console.error("[auth/callback] auth error:", authError);
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("next", nextPath);
-    return NextResponse.redirect(loginUrl);
-  }
+  // next が付いていたら優先してそちらへ、なければ `/`
+  const next = url.searchParams.get("next") || "/";
+  const redirectUrl = new URL(next, req.url);
 
-  // ここまで来れば Cookie にセッションが書き込まれている
-  // → 次のリクエストでは middleware / getSupabaseServer から user が見える
-  return NextResponse.redirect(new URL(nextPath, req.url));
+  return NextResponse.redirect(redirectUrl);
 }
 
