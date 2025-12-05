@@ -1,19 +1,24 @@
+// hooks/useBoot.ts
 "use client";
 
 import { useEffect } from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 /**
- * アプリ起動時に一度だけセッションを触って、
- * Supabase の Cookie / セッション状態を安定させるフック
+ * アプリ起動時に Supabase のセッション検出を走らせるだけのフック
+ *
+ * - createClientComponentClient を使うのをやめて supabaseBrowser() に統一
+ * - これで "Multiple GoTrueClient instances detected" 警告も抑制
  */
 export function useBoot() {
   useEffect(() => {
-    const sb = createClientComponentClient();
+    const supabase = supabaseBrowser();
 
-    // 起動時にセッションを触って Cookie を最新化
-    sb.auth.getSession().catch(() => {
-      // ウォーミングアップ用途なのでエラーは握りつぶす
+    // ここで一度セッションを読んでおくことで、
+    // detectSessionInUrl が発火して Cookie とメモリ状態が同期される
+    supabase.auth.getSession().catch((error) => {
+      console.error("[useBoot] getSession error", error);
     });
   }, []);
 }
+

@@ -1,69 +1,86 @@
 // app/login/page.tsx
 "use client";
 
-import { useState, useTransition } from "react";
+import { FormEvent, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
-// Supabase のブラウザクライアント（@supabase/ssr ベース）
-// - 他の lib/logs.ts などと同じ createBrowserClient を使用
-// - サーバ側の createServerClient（middleware / supabaseServer）と
-//   Cookie 形式が完全に揃う
-const supabase = supabaseBrowser();
-
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const searchParams = useSearchParams();
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const next = searchParams.get("next") ?? "/";
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!email) return;
+    setErrorMessage(null);
 
-    setLoading(true);
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const next = params.get("next") || "/";
-      const callback = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
-        next,
-      )}`;
+    const formData = new FormData(e.currentTarget);
+    const email = String(formData.get("email") ?? "").trim();
 
-      // ★ ここがポイント：
-      //   - 以前は createClientComponentClient(@supabase/auth-helpers-nextjs)
-      //   - 今回から supabaseBrowser(@supabase/ssr) に統一
-      //   → middleware / auth/callback / supabaseServer と同じ
-      //     Cookie・セッション形式になる
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: callback },
-      });
-
-      if (error) throw error;
-      setSent(true);
-    } catch (err) {
-      alert((err as Error).message);
-    } finally {
-      setLoading(false);
+    if (!email) {
+      setErrorMessage("メールアドレスを入力してください。");
+      return;
     }
+
+    startTransition(async () => {
+      const supabase = supabaseBrowser();
+
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+
+      try {
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            // 🔹 メールリンクの遷移先を /auth/callback に一本化
+            emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(
+              next
+            )}`,
+          },
+        });
+
+        if (error) {
+          console.error("[login] signInWithOtp error", error);
+          setErrorMessage("ログインリンクの送信に失敗しました。");
+          return;
+        }
+
+        setSent(true);
+      } catch (error) {
+        console.error("[login] unexpected error", error);
+        setErrorMessage("予期しないエラーが発生しました。");
+      }
+    });
   };
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-10">
-      <h1 className="text-2xl font-semibold mb-6">ログイン</h1>
+    <main className="mx-auto max-w-md px-4 py-8">
+      <h1 className="mb-4 text-2xl font-bold">ログイン</h1>
+
       {sent ? (
-        <p className="text-sm">メールのリンクを確認してください。</p>
+        <p>メールのリンクを確認してください。</p>
       ) : (
-        <form onSubmit={onSubmit} className="space-y-4">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
-            placeholder="you@example.com"
-          />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <input
+              type="email"
+              name="email"
+              placeholder="you@example.com"
+              className="w-full rounded border bg-transparent px-3 py-2"
+            />
+          </div>
+
+          {errorMessage && (
+            <p className="text-sm text-red-500">{errorMessage}</p>
+          )}
+
           <button
-            disabled={loading || isPending}
-            className="rounded-md bg-blue-600 px-4 py-2 disabled:opacity-50"
+            type="submit"
+            disabled={isPending}
+            className="rounded bg-blue-500 px-4 py-2 text-white disabled:opacity-50"
           >
             ログインリンクを送る
           </button>
