@@ -16,10 +16,10 @@
     "chart.js": "^4.5.1",
     "clsx": "^2.1.1",
     "dayjs": "1.11.18",
-    "next": "15.5.3",
-    "react": "19.1.0",
+    "next": "15.5.7",
+    "react": "19.1.2",
     "react-chartjs-2": "^5.3.1",
-    "react-dom": "19.1.0",
+    "react-dom": "19.1.2",
     "zod": "4.1.12"
   },
   "devDependencies": {
@@ -31,7 +31,7 @@
     "autoprefixer": "^10",
     "dotenv": "17.2.3",
     "eslint": "9.38.0",
-    "eslint-config-next": "15.5.3",
+    "eslint-config-next": "15.5.7",
     "husky": "9.1.7",
     "postcss": "^8",
     "tailwindcss": "4.1.14",
