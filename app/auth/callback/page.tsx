@@ -8,7 +8,8 @@ import { supabaseBrowser } from "@/lib/supabaseBrowser";
 /**
  * メールリンク / OAuth などから戻ってきたときのコールバックページ
  *
- * - URL に含まれる code もしくは token_hash/type を Supabase に渡してセッションを張る
+ * - Magic Link 等: token_hash + type を verifyOtp に渡してセッションを張る
+ * - OAuth 等: code を exchangeCodeForSession でセッションに交換する
  * - 成功したら next（または / ）へリダイレクト
  * - 失敗したら /login?error=callback_failed へリダイレクト
  */
@@ -21,8 +22,8 @@ export default function AuthCallbackPage() {
       const supabase = supabaseBrowser();
 
       // 例:
+      //   /auth/callback?token_hash=xxx&type=magiclink&next=/dashboard
       //   /auth/callback?code=xxxxx&next=/dashboard
-      //   /auth/callback?token_hash=xxx&type=magiclink&next=%2F
       const code = searchParams.get("code");
       const tokenHash = searchParams.get("token_hash");
       const typeParam = searchParams.get("type");
@@ -32,9 +33,20 @@ export default function AuthCallbackPage() {
       const nextPath = nextParam.startsWith("/") ? nextParam : "/";
 
       try {
-        if (code) {
-          // PKCE の Auth Code フロー:
-          // URL の code をセッションに交換する
+        if (tokenHash && typeParam) {
+          // 🔹 Magic Link / Email OTP 用の正規ルート
+          const { error } = await (supabase.auth as any).verifyOtp({
+            type: typeParam as any, // "magiclink" | "signup" | "recovery" など
+            token_hash: tokenHash,
+          });
+
+          if (error) {
+            console.error("[auth/callback] verifyOtp error:", error);
+            router.replace("/login?error=callback_failed");
+            return;
+          }
+        } else if (code) {
+          // 🔹 OAuth など code ベースのフロー用（今後の拡張に備えて残す）
           const { error } = await (supabase.auth as any).exchangeCodeForSession(
             code
           );
@@ -47,23 +59,10 @@ export default function AuthCallbackPage() {
             router.replace("/login?error=callback_failed");
             return;
           }
-        } else if (tokenHash && typeParam) {
-          // Email / Magic Link 用の token_hash フロー:
-          // token_hash + type を verifyOtp に渡してセッションを確立する
-          const { error } = await (supabase.auth as any).verifyOtp({
-            type: typeParam as any, // "magiclink" | "signup" | "recovery" など
-            token_hash: tokenHash,
-          });
-
-          if (error) {
-            console.error("[auth/callback] verifyOtp error:", error);
-            router.replace("/login?error=callback_failed");
-            return;
-          }
         } else {
           // code も token_hash も無いパターン
           console.error("[auth/callback] no code or token_hash in URL", {
-            search: window.location.search,
+            search: typeof window !== "undefined" ? window.location.search : "",
           });
           router.replace("/login?error=missing_code");
           return;
@@ -78,7 +77,6 @@ export default function AuthCallbackPage() {
     };
 
     run();
-    // searchParams は URL から生成されているので依存に入れて OK
   }, [router, searchParams]);
 
   return (
