@@ -2,33 +2,23 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Supabase の Magic Link / OTP から戻ってきたときの
- * `code` 付き URL を `/auth/callback` に集約するためのミドルウェア。
+ * 2025-12 対応:
+ * FinLit PWA では、Supabase の Magic Link / OTP の redirectTo を
+ * すべて `/auth/callback` に向けているため、
+ * middleware 側で `code` や `error_description` を見て
+ * 強制的に `/auth/callback` へリダイレクトする必要はない。
  *
- * それ以外の処理（認可ガードなど）は各ページ側の実装に任せ、
- * ここでは一切行わない。
+ * その結果、環境によってはリダイレクトループが起きる可能性があるため、
+ * ここでは「すべてのリクエストをそのまま通す」だけにしている。
+ *
+ * 認可ガードやログインチェックは各ページ側の実装に任せる。
  */
-export function middleware(req: NextRequest) {
-  const url = req.nextUrl;
-  const pathname = url.pathname;
-
-  // Supabase からの戻りで `code` or `error_description` が付いている場合、
-  // どのパスに来ても `/auth/callback` に集約する。
-  const hasCode = url.searchParams.get("code");
-  const hasError = url.searchParams.get("error_description");
-
-  if ((hasCode || hasError) && pathname !== "/auth/callback") {
-    const redirectUrl = new URL("/auth/callback", req.url);
-    redirectUrl.search = url.search; // クエリをそのまま引き継ぐ
-    return NextResponse.redirect(redirectUrl);
-  }
-
-  // それ以外は何もせず素通り
+export function middleware(_req: NextRequest) {
+  // 何もせず素通り
   return NextResponse.next();
 }
 
-// _next や static, api などにはミドルウェアを適用しない
+// 一応 matcher は以前と同じに保つが、中身は no-op
 export const config = {
   matcher: ["/((?!_next/|static/|favicon.ico).*)"],
 };
-
