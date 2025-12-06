@@ -2,13 +2,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-
-type SupabaseCookie = {
-  name: string;
-  value: string;
-  // Supabase から渡ってくる options はかなり複雑なので any で受ける
-  options: any;
-};
+import type { Database } from "@/lib/database.types";
 
 export async function POST(req: Request) {
   const { email } = (await req.json().catch(() => ({}))) as {
@@ -22,23 +16,19 @@ export async function POST(req: Request) {
     );
   }
 
-  // Next 15 では cookies() が Promise として扱われるケースがあるので念のため await
+  // Next 15 では cookies() が Promise 型として扱われるため await
   const cookieStore = await cookies();
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      // ★ここがポイント：サーバー側クライアントも PKCE を明示
-      auth: {
-        flowType: "pkce",
-      },
       cookies: {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(list: SupabaseCookie[]) {
-          list.forEach(({ name, value, options }) => {
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
             // Next 15 の cookies().set はオブジェクト引数
             cookieStore.set({ name, value, ...options });
           });
@@ -47,15 +37,17 @@ export async function POST(req: Request) {
     }
   );
 
-  // 本番／ローカルどちらでも適切な URL になるように origin から組み立てる
+  // 現在の環境の origin（例: https://finlit-app-chi.vercel.app）
+  const url = new URL(req.url);
   const origin =
-    req.headers.get("origin") ?? "http://localhost:3000";
+    process.env.NEXT_PUBLIC_SITE_URL ?? `${url.protocol}//${url.host}`;
+
+  const emailRedirectTo = `${origin}/auth/callback`;
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      // ここに PKCE コードが付いた状態で戻ってくる想定
-      emailRedirectTo: `${origin}/auth/callback`,
+      emailRedirectTo,
     },
   });
 
