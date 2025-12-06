@@ -6,9 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 /**
- * メールリンクから戻ってきたときのコールバックページ
+ * メールリンク / OAuth などから戻ってきたときのコールバックページ
  *
- * - URL に含まれる code を Supabase に渡してセッションを張る（PKCE）
+ * - URL に含まれる code もしくは token_hash/type を Supabase に渡してセッションを張る
  * - 成功したら next（または / ）へリダイレクト
  * - 失敗したら /login?error=callback_failed へリダイレクト
  */
@@ -22,8 +22,10 @@ export default function AuthCallbackPage() {
 
       // 例:
       //   /auth/callback?code=xxxxx&next=/dashboard
-      //   /auth/callback?next=%2F%3Ftoken_hash%3D...&type=magiclink
+      //   /auth/callback?token_hash=xxx&type=magiclink&next=%2F
       const code = searchParams.get("code");
+      const tokenHash = searchParams.get("token_hash");
+      const typeParam = searchParams.get("type");
       const nextParam = searchParams.get("next") ?? "/";
 
       // next は絶対パスだけ許可（外部サイトへの飛び出し防止）
@@ -31,32 +33,38 @@ export default function AuthCallbackPage() {
 
       try {
         if (code) {
-          // @supabase/ssr のブラウザクライアントは getSessionFromUrl を持たないので
-          // exchangeCodeForSession を使う
-          const { error } = await (supabase.auth as any).exchangeCodeForSession({
-            code,
+          // PKCE の Auth Code フロー:
+          // URL の code をセッションに交換する
+          const { error } = await (supabase.auth as any).exchangeCodeForSession(
+            code
+          );
+
+          if (error) {
+            console.error(
+              "[auth/callback] exchangeCodeForSession error:",
+              error
+            );
+            router.replace("/login?error=callback_failed");
+            return;
+          }
+        } else if (tokenHash && typeParam) {
+          // Email / Magic Link 用の token_hash フロー:
+          // token_hash + type を verifyOtp に渡してセッションを確立する
+          const { error } = await (supabase.auth as any).verifyOtp({
+            type: typeParam as any, // "magiclink" | "signup" | "recovery" など
+            token_hash: tokenHash,
           });
 
           if (error) {
-            console.error("[auth/callback] exchangeCodeForSession error:", error);
+            console.error("[auth/callback] verifyOtp error:", error);
             router.replace("/login?error=callback_failed");
             return;
           }
         } else {
-          // code が無いパターン（今まで missing_code になっていたケース）
-          // token_hash だけ来ている可能性もログに残しておく
-          const url = new URL(window.location.href);
-          const tokenHashFromQuery = url.searchParams.get("token_hash");
-          const tokenHashFromNext = (() => {
-            const nextUrl = new URL(url.origin + nextPath);
-            return nextUrl.searchParams.get("token_hash");
-          })();
-
-          console.error("[auth/callback] no code param", {
-            tokenHashFromQuery,
-            tokenHashFromNext,
+          // code も token_hash も無いパターン
+          console.error("[auth/callback] no code or token_hash in URL", {
+            search: window.location.search,
           });
-
           router.replace("/login?error=missing_code");
           return;
         }
