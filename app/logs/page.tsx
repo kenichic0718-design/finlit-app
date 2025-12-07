@@ -1,4 +1,5 @@
 // app/logs/page.tsx
+import Link from "next/link";
 import { supabaseServer } from "@/lib/supabaseServer";
 import ClientBoundary from "./ClientBoundary";
 
@@ -28,6 +29,11 @@ export default async function LogsPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           記録ページを利用するにはログインが必要です。
         </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          <Link href="/login" className="underline underline-offset-2">
+            こちらのログインページから再ログインしてください。
+          </Link>
+        </p>
       </main>
     );
   }
@@ -39,4 +45,3 @@ export default async function LogsPage() {
     </main>
   );
 }
-

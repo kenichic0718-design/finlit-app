@@ -1,4 +1,5 @@
 // app/budgets/page.tsx
+import Link from "next/link";
 import { supabaseServer } from "@/lib/supabaseServer";
 import ClientBoundary from "./ClientBoundary";
 
@@ -31,6 +32,11 @@ export default async function BudgetsPage() {
         <p className="text-sm text-muted-foreground">
           ログインすると、月ごとのカテゴリ別予算を設定できます。
         </p>
+        <p className="text-xs text-muted-foreground">
+          <Link href="/login" className="underline underline-offset-2">
+            こちらのログインページから再ログインしてください。
+          </Link>
+        </p>
       </main>
     );
   }
@@ -41,4 +47,3 @@ export default async function BudgetsPage() {
     </main>
   );
 }
-
